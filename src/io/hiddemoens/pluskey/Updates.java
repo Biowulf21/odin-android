@@ -24,7 +24,7 @@ final class Updates {
  Updates(MainActivity activity){this.activity=activity;}
  private android.content.SharedPreferences prefs(){return activity.getSharedPreferences("updates",0);}
  boolean automatic(){return prefs().getBoolean("automatic",true);}
- void toggleAutomatic(){prefs().edit().putBoolean("automatic",!automatic()).apply();}
+ void setAutomatic(boolean enabled){prefs().edit().putBoolean("automatic",enabled).apply();}
  void check(boolean manual){
   if(manual&&restorePending()){install();return;}
   if(!manual&&(!automatic()||System.currentTimeMillis()-prefs().getLong("checked",0)<86400000L))return;

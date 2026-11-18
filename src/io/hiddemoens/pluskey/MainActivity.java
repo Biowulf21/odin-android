@@ -377,12 +377,20 @@ public final class MainActivity extends AppCompatActivity {
         });
         if (includeConnection) {
             LinearLayout connection = Ui.card(this, body);
-            settingsRow(connection, "Button setup", android.R.drawable.ic_menu_manage, () -> {
-                setup.show();
-            });
-            settingsRow(connection, "Connection options", android.R.drawable.ic_menu_preferences, () -> {
-                setup.advanced();
-            });
+            Ui.text(this, connection, "Button connection", 19, false);
+            settingsRow(connection, "Set up button", android.R.drawable.ic_menu_manage, setup::show);
+            settingsRow(connection, "Connection settings", android.R.drawable.ic_menu_preferences, setup::advanced);
+
+            LinearLayout updatesCard = Ui.card(this, body);
+            Ui.text(this, updatesCard, "App updates", 19, false);
+            settingsRow(updatesCard, "Check for updates", android.R.drawable.ic_popup_sync, this::checkUpdates);
+            com.google.android.material.materialswitch.MaterialSwitch automatic =
+                new com.google.android.material.materialswitch.MaterialSwitch(this);
+            automatic.setText("Automatically check for updates");
+            automatic.setMinHeight(dp(52));
+            automatic.setChecked(automaticUpdates());
+            automatic.setOnCheckedChangeListener((button, checked) -> updates.setAutomatic(checked));
+            updatesCard.addView(automatic);
         }
         settingsBack.setEnabled(true);
         updateShelfNavigation(true);
@@ -644,7 +652,6 @@ public final class MainActivity extends AppCompatActivity {
     public void onRequestPermissionsResult(int code,String[] permissions,int[] grants){super.onRequestPermissionsResult(code,permissions,grants);setup.refresh();if(resumePairingAfterPermission){resumePairingAfterPermission=false;if(setup.localAllowed()&&setup.notificationsAllowed())setup.pairWithCode();}}
     void checkUpdates(){updates.check(true);}
     boolean automaticUpdates(){return updates.automatic();}
-    void toggleUpdateChecks(){updates.toggleAutomatic();}
     private void onePlusSettings(){try{startActivity(new Intent("com.oplus.gesture.StartActionButtonSettingsActivity").setPackage("com.oplus.gesture"));}catch(Exception error){
         Intent settings=new Intent(Settings.ACTION_SETTINGS).putExtra(":settings:fragment_args_key","snap_card_pack");
         Bundle args=new Bundle();args.putString(":settings:fragment_args_key","snap_card_pack");settings.putExtra(":settings:show_fragment_args",args);

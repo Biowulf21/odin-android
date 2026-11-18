@@ -33,7 +33,7 @@ Tested on OnePlus 15 (CPH2747) running Android 17 and OxygenOS 17. Requires Andr
 
 ## Updates and privacy
 
-Plus Key checks GitHub for updates once daily when opened. Go to **Settings → More options** to check manually or turn off automatic checks. Before handing an update to Android’s installer, Plus Key verifies the APK checksum, package name, version code, and signing certificate. Android requires your approval to install it.
+Plus Key checks GitHub for updates once daily when opened. Go to **Settings → App updates** to check manually or turn off automatic checks. Before handing an update to Android’s installer, Plus Key verifies the APK checksum, package name, version code, and signing certificate. Android requires your approval to install it.
 
 No account or analytics. Pairing and helper connections stay on your phone. The pairing identity is stored privately and excluded from backup.
 

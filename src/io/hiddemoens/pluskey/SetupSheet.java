@@ -21,7 +21,7 @@ final class SetupSheet {
     void show(){
         if(dialog!=null&&dialog.isShowing()){refresh();return;}
         body=Ui.column(activity);body.setPadding(Ui.dp(activity,24),0,Ui.dp(activity,24),Ui.dp(activity,16));ScrollView page=new ScrollView(activity);page.addView(body);
-        dialog=new MaterialAlertDialogBuilder(activity).setTitle("Set up your button").setView(page).setPositiveButton("Done",null).setNeutralButton("More options",(d,w)->advanced()).create();
+        dialog=new MaterialAlertDialogBuilder(activity).setTitle("Set up your button").setView(page).setPositiveButton("Done",null).setNeutralButton("Connection settings",(d,w)->advanced()).create();
         wirelessOnly=false;previous="";dialog.show();refresh();
     }
     void refresh(){
@@ -87,14 +87,18 @@ final class SetupSheet {
             }).show();
     }
     void advanced(){
-        String[] options={"Wireless debugging settings","Pair with code","App permissions","App battery settings",wireless.automatic()?"Turn off automatic startup":"Automatic startup","Check for updates",activity.automaticUpdates()?"Turn off automatic update checks":"Turn on automatic update checks"};
-        new MaterialAlertDialogBuilder(activity).setTitle("Connection options").setItems(options,(d,index)->{
-            if(index==0)wirelessSettings();else if(index==1)pairWithCode();
-            else if(index==2)open(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+activity.getPackageName())));
-            else if(index==3)open(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
-            else if(index==5)activity.checkUpdates();
-            else if(index==6)activity.toggleUpdateChecks();
-            else if(wireless.automatic()){wireless.disableAutomatic();previous="";refresh();}else automaticConsent();
+        String[] options={"Pair with code",wireless.automatic()?"Turn off automatic startup":"Enable automatic startup","Wireless debugging settings","App permissions","Battery optimization settings"};
+        new MaterialAlertDialogBuilder(activity).setTitle("Connection settings").setItems(options,(d,index)->{
+            switch(index){
+                case 0: pairWithCode(); break;
+                case 1:
+                    if(wireless.automatic()){wireless.disableAutomatic();previous="";refresh();}
+                    else automaticConsent();
+                    break;
+                case 2: wirelessSettings(); break;
+                case 3: open(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+activity.getPackageName()))); break;
+                case 4: open(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)); break;
+            }
         }).setNegativeButton("Close",null).show();
     }
     void pairWithCode(){
