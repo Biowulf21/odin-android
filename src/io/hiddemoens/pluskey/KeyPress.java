@@ -1,30 +1,58 @@
 package io.hiddemoens.pluskey;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 final class KeyPress {
     private static final Pattern EVENT = Pattern.compile("\\[\\s*([0-9]+(?:\\.[0-9]+)?)\\]\\s+(?:/dev/input/event[0-9]+:\\s+)?EV_KEY\\s+BTN_TRIGGER_HAPPY32\\s+(DOWN|UP|REPEAT)\\s*");
-    private double down = -1, eventDown = -1;
+    private static final long HOLD_MS = 500;
+    private final ScheduledExecutorService timer;
+    private final Runnable onHold;
+    private ScheduledFuture<?> pendingHold;
+    private long pressId;
+    private double eventDown = -1;
     private boolean longFired;
-    boolean accept(String line) { return gesture(line)==1; }
-    synchronized int gesture(String line) {
-        Matcher match=EVENT.matcher(line);
-        return match.matches()?gesture(line,Double.parseDouble(match.group(1))):0;
+
+    KeyPress() {
+        this(null, null);
     }
-    synchronized int gesture(String line,double now) {
-        Matcher match=EVENT.matcher(line);
-        if(!match.matches())return 0;
-        String value=match.group(2);
-        if(value.equals("DOWN")&&down<0){down=now;eventDown=Double.parseDouble(match.group(1));longFired=false;}
-        if(!value.equals("UP"))return 0;
-        double duration=Double.parseDouble(match.group(1))-eventDown;
-        int result=down<0||duration<0||longFired?0:duration<0.5?1:2;
-        down=-1;
+
+    KeyPress(ScheduledExecutorService timer, Runnable onHold) {
+        this.timer = timer;
+        this.onHold = onHold;
+    }
+
+    boolean accept(String line) { return gesture(line) == 1; }
+
+    synchronized int gesture(String line) {
+        Matcher match = EVENT.matcher(line);
+        if (!match.matches()) return 0;
+        String value = match.group(2);
+        if (value.equals("DOWN") && eventDown < 0) {
+            eventDown = Double.parseDouble(match.group(1));
+            longFired = false;
+            if (timer != null) {
+                long id = ++pressId;
+                pendingHold = timer.schedule(() -> fireHold(id), HOLD_MS, TimeUnit.MILLISECONDS);
+            }
+        }
+        if (!value.equals("UP") || eventDown < 0) return 0;
+        if (pendingHold != null) {
+            pendingHold.cancel(false);
+            pendingHold = null;
+        }
+        double duration = Double.parseDouble(match.group(1)) - eventDown;
+        int result = duration < 0 || longFired ? 0 : duration < HOLD_MS / 1000.0 ? 1 : 2;
+        eventDown = -1;
         return result;
     }
-    synchronized int tick(double now) {
-        if(down<0||longFired||now-down<0.5)return 0;
-        longFired=true;
-        return 2;
+
+    private synchronized void fireHold(long id) {
+        if (id != pressId || eventDown < 0 || longFired) return;
+        pendingHold = null;
+        longFired = true;
+        onHold.run();
     }
     static String device(String text) {
         String path = null;

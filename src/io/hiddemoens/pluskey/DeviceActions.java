@@ -1,9 +1,13 @@
 package io.hiddemoens.pluskey;
 
+import android.app.KeyguardManager;
 import android.content.Context;
 import android.hardware.camera2.*;
+import android.hardware.display.DisplayManager;
 import android.media.AudioManager;
 import android.os.*;
+import android.provider.Settings;
+import android.view.Display;
 import java.util.concurrent.*;
 
 /** Invoked only by the already-authorized shell helper, using shell attribution. */
@@ -22,6 +26,45 @@ final class DeviceActions {
             context=base.createPackageContext("com.android.shell",0);
         }
         return context;
+    }
+    static String nativeLongPressAction() throws Exception {
+        return Settings.System.getString(context().getContentResolver(), Helper.ONEPLUS_ACTION_SETTING);
+    }
+    static boolean isAwakeAndUnlocked() throws Exception {
+        Context ctx = context();
+        if (!ctx.getSystemService(PowerManager.class).isInteractive()) return false;
+        Display display = ctx.getSystemService(DisplayManager.class).getDisplay(Display.DEFAULT_DISPLAY);
+        if (display == null) throw new IllegalStateException("Default display unavailable");
+        return display.getState() == Display.STATE_ON
+            && !ctx.getSystemService(KeyguardManager.class).isKeyguardLocked();
+    }
+    static Runnable watchUnlock(Executor executor, Runnable changed) throws Exception {
+        if (Build.VERSION.SDK_INT < 36) return null;
+        Context ctx = context();
+        DisplayManager displays = ctx.getSystemService(DisplayManager.class);
+        KeyguardManager keyguard = ctx.getSystemService(KeyguardManager.class);
+        DisplayManager.DisplayListener displayListener = new DisplayManager.DisplayListener() {
+            @Override public void onDisplayAdded(int id) { }
+            @Override public void onDisplayRemoved(int id) { }
+            @Override public void onDisplayChanged(int id) {
+                if (id == Display.DEFAULT_DISPLAY) changed.run();
+            }
+        };
+        KeyguardManager.KeyguardLockedStateListener keyguardListener = locked -> changed.run();
+        displays.registerDisplayListener(executor, DisplayManager.EVENT_TYPE_DISPLAY_STATE, displayListener);
+        try {
+            keyguard.addKeyguardLockedStateListener(executor, keyguardListener);
+        } catch (RuntimeException error) {
+            displays.unregisterDisplayListener(displayListener);
+            throw error;
+        }
+        return () -> {
+            try {
+                keyguard.removeKeyguardLockedStateListener(keyguardListener);
+            } finally {
+                displays.unregisterDisplayListener(displayListener);
+            }
+        };
     }
     static synchronized void run(String action)throws Exception{
         String code=null;

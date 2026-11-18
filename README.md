@@ -37,8 +37,8 @@ Flashlight, sound, media, volume, and lock actions can run while locked. Apps, s
 If local pairing cannot start helper, install APK and open app once, enable USB debugging and authorize computer. From directory containing APK, run:
 
 ```sh
-adb install -r PlusKey-1.4.apk
-adb push PlusKey-1.4.apk /data/local/tmp/plus-lens-helper.apk
+adb install -r PlusKey-1.4.1.apk
+adb push PlusKey-1.4.1.apk /data/local/tmp/plus-lens-helper.apk
 adb shell chmod 444 /data/local/tmp/plus-lens-helper.apk
 adb shell cmd package list packages -U io.hiddemoens.pluskey
 ```

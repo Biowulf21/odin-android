@@ -1,5 +1,11 @@
 package io.hiddemoens.pluskey;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+
 public final class CoreTest {
     static void check(boolean value, String message) {
         if (!value) throw new AssertionError(message);
@@ -43,18 +49,45 @@ public final class CoreTest {
         check(gestures.gesture(event(20,"DOWN"))==0,"press waits for release");
         check(gestures.gesture(event(20.7,"UP"))==2,"long hold produces long gesture");
         check(gestures.gesture(event(20.8,"UP"))==0,"long gesture is not duplicated");
-        KeyPress held = new KeyPress();
-        held.gesture(event(30,"DOWN"));
-        check(held.tick(30.499)==0,"hold waits until threshold");
-        check(held.tick(30.5)==2,"long fires while button still held");
-        check(held.tick(31)==0,"held button triggers only once");
-        check(held.gesture(event(31.2,"UP"))==0,"long release never triggers another action");
-        held.gesture(event(32,"DOWN"));
-        check(held.gesture(event(32.1,"UP"))==1,"new short press still works");
-        check(held.tick(33)==0,"released short has no pending long action");
-        KeyPress delayed=new KeyPress();
-        delayed.gesture(event(40,"DOWN"),50);
-        check(delayed.gesture(event(40.7,"UP"),50.001)==2,"queued events retain physical hold duration");
+        checkHoldScheduling();
         System.out.println("Core behavior tests passed");
+    }
+
+    private static void checkHoldScheduling() {
+        List<Runnable> callbacks = new ArrayList<>();
+        ScheduledThreadPoolExecutor timer = new ScheduledThreadPoolExecutor(1) {
+            @Override public ScheduledFuture<?> schedule(Runnable task, long delay, TimeUnit unit) {
+                check(unit.toMillis(delay) == 500, "hold waits 500 ms");
+                callbacks.add(task);
+                return super.schedule(task, 1, TimeUnit.DAYS);
+            }
+        };
+        timer.setRemoveOnCancelPolicy(true);
+        try {
+            int[] fired = {0};
+            KeyPress held = new KeyPress(timer, () -> fired[0]++);
+            held.gesture("garbage");
+            held.gesture(event(29, "REPEAT"));
+            check(callbacks.isEmpty(), "idle and stray repeats never schedule work");
+            held.gesture(event(30, "DOWN"));
+            held.gesture(event(30.1, "DOWN"));
+            held.gesture(event(30.2, "REPEAT"));
+            check(callbacks.size() == 1, "one timer per press");
+            check(held.gesture(event(30.3, "UP")) == 1, "short action fires on release");
+            check(timer.getQueue().isEmpty(), "release cancels timer");
+            held.gesture(event(31, "DOWN"));
+            callbacks.get(0).run();
+            check(fired[0] == 0, "old timer cannot fire for a new press");
+            timer.remove(timer.getQueue().peek());
+            callbacks.get(1).run();
+            callbacks.get(1).run();
+            check(fired[0] == 1, "hold fires once while button is down");
+            check(held.gesture(event(31.6, "UP")) == 0, "held release does not fire again");
+            held.gesture(event(40, "DOWN"));
+            check(held.gesture(event(40.7, "UP")) == 2, "queued events retain physical hold duration");
+            check(timer.getQueue().isEmpty(), "queued release cancels its timer");
+        } finally {
+            timer.shutdownNow();
+        }
     }
 }

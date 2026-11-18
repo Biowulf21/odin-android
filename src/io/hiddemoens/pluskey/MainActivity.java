@@ -5,6 +5,7 @@ import android.content.pm.*;
 import android.graphics.Typeface;
 import android.os.*;
 import android.provider.Settings;
+import android.text.TextUtils;
 import android.view.*;
 import android.widget.*;
 import androidx.appcompat.app.AppCompatActivity;
@@ -12,11 +13,13 @@ import com.google.android.material.button.MaterialButton;
 import com.google.android.material.color.DynamicColors;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.progressindicator.LinearProgressIndicator;
+import java.io.File;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.*;
 
 public final class MainActivity extends AppCompatActivity {
+    private static final long STATUS_CHECK_MS = 2_000;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private Mailbox mailbox;private WirelessController wireless;private SetupSheet setup;
@@ -25,7 +28,16 @@ public final class MainActivity extends AppCompatActivity {
     private boolean resumed,autoAttempt;
     private Updates updates;
     private boolean resumePairingAfterPermission;
-    private final Runnable poll=new Runnable(){public void run(){if(resumed){refresh();handler.postDelayed(this,1500);}}};
+    private FileObserver statusObserver;
+    private int resumeGeneration;
+    private final Runnable statusChanged = () -> refresh(false);
+    private final Runnable poll = new Runnable() {
+        @Override public void run() {
+            if (!resumed) return;
+            refresh(true);
+            handler.postDelayed(this, STATUS_CHECK_MS);
+        }
+    };
     protected void onCreate(Bundle saved){
         DynamicColors.applyToActivityIfAvailable(this);super.onCreate(saved);
         updates=new Updates(this);mailbox=new Mailbox(getExternalFilesDir(null));wireless=WirelessController.get(this);setup=new SetupSheet(this,wireless);
@@ -64,7 +76,7 @@ public final class MainActivity extends AppCompatActivity {
                 .setMessage("Set OnePlus button action to Do nothing so your chosen long-press action can run.").setPositiveButton("Open settings",(d,w)->onePlusSettings()).setNegativeButton("Later",null).show();
         }catch(Exception error){toast("Could not save. Choose another action.");}
     }).show(longPress);}
-    private String systemAction(){try{return Settings.System.getString(getContentResolver(),"oplus_action_button_switch_state");}catch(Exception error){return null;}}
+    private String systemAction(){try{return Settings.System.getString(getContentResolver(),Helper.ONEPLUS_ACTION_SETTING);}catch(Exception error){return null;}}
     private void showSelections(){
         try{showSelection(mailbox.selected(),shortName,shortIcon);String selected=mailbox.selectedLong();showSelection(selected,longName,longIcon);
             boolean blocked=selected!=null&&!"nothing".equals(systemAction());
@@ -92,23 +104,76 @@ public final class MainActivity extends AppCompatActivity {
         wireless.prefs().edit().putBoolean("user_stopped",false).apply();
         if(!wireless.paired()||!setup.localAllowed()){setup.show();return;}
         if(!setup.wifiDebugging()&&!wireless.automatic()){setup.show();return;}
-        wireless.start();refresh();
+        wireless.start();refresh(true);
     }
-    private void refresh(){worker.execute(()->{
-        String value=null,version="";try{value=mailbox.readStatus(System.currentTimeMillis());version=mailbox.runningVersion();}catch(IOException ignored){}
-        final String current=value;final boolean versionOkay=Helper.VERSION.equals(version);
-        runOnUiThread(()->{
-            if(isDestroyed())return;boolean busy=wireless.busy.get();boolean ready=current!=null&&current.startsWith("Listening|")&&versionOkay;
-            progress.setVisibility(busy?View.VISIBLE:View.GONE);start.setVisibility(!ready&&!busy&&wireless.paired()?View.VISIBLE:View.GONE);stop.setVisibility(ready&&!busy?View.VISIBLE:View.GONE);
-            finishSetup.setVisibility(!ready&&!busy?View.VISIBLE:View.GONE);finishSetup.setText(wireless.paired()?"Fix setup":"Finish setup");
-            if(busy){status.setText("Starting…");detail.setText(wireless.message);}
-            else if(ready){String[] fields=current.split("\\|",3);boolean failed=fields.length==3&&(fields[2].startsWith("Launch failed")||fields[2].startsWith("Long press needs"));status.setText(failed?"Action needs attention":"Ready");detail.setText(failed?fields[2]:wireless.automatic()?"Automatic startup on":"Your actions are ready.");}
-            else if(wireless.prefs().getBoolean("user_stopped",false)){status.setText("Stopped");detail.setText("Tap Start when you’re ready.");}
-            else if(current!=null&&current.startsWith("Error|")){status.setText("Needs attention");detail.setText(current.split("\\|",3)[2]);}
-            else{status.setText(wireless.paired()?"Not running":"Setup needed");detail.setText(wireless.message.isEmpty()?"Finish setup to use your button.":wireless.message);}
-            setup.refresh();updates.resumed();
+    private void watchStatus() {
+        File dir = getExternalFilesDir(null);
+        if (dir == null) return;
+        statusObserver = new FileObserver(dir, FileObserver.MOVED_TO) {
+            @Override public void onEvent(int event, String path) {
+                if (!Mailbox.STATUS_FILE.equals(path)) return;
+                handler.removeCallbacks(statusChanged);
+                handler.post(statusChanged);
+            }
+        };
+        try {
+            statusObserver.startWatching();
+        } catch (RuntimeException unavailable) {
+            android.util.Log.w("PlusKey", "Status callbacks unavailable", unavailable);
+        }
+    }
+    private void refresh(boolean checkLiveness) {
+        if (!resumed) return;
+        int generation = resumeGeneration;
+        worker.execute(() -> {
+            String value = null;
+            boolean matchingVersion = false;
+            try {
+                matchingVersion = Helper.VERSION.equals(mailbox.runningVersion());
+                long now = System.currentTimeMillis();
+                value = checkLiveness && matchingVersion && !wireless.prefs().getBoolean("user_stopped", false)
+                    ? mailbox.refreshStatus(now) : mailbox.readStatus(now);
+            } catch (IOException ignored) { }
+            final String current = value;
+            final boolean versionOkay = matchingVersion;
+            runOnUiThread(() -> {
+                if (!resumed || resumeGeneration != generation || isDestroyed()) return;
+                renderStatus(current, versionOkay);
+                if (checkLiveness) setup.refresh();
+            });
         });
-    });}
+    }
+    private void renderStatus(String current, boolean versionOkay) {
+        boolean busy = wireless.busy.get();
+        boolean ready = current != null && current.startsWith("Listening|") && versionOkay;
+        boolean paired = wireless.paired();
+        progress.setVisibility(busy ? View.VISIBLE : View.GONE);
+        start.setVisibility(!ready && !busy && paired ? View.VISIBLE : View.GONE);
+        stop.setVisibility(ready && !busy ? View.VISIBLE : View.GONE);
+        finishSetup.setVisibility(!ready && !busy ? View.VISIBLE : View.GONE);
+        setTextIfChanged(finishSetup, paired ? "Fix setup" : "Finish setup");
+        if (busy) {
+            setTextIfChanged(status, "Starting…");
+            setTextIfChanged(detail, wireless.message);
+        } else if (ready) {
+            String[] fields = current.split("\\|", 3);
+            boolean failed = fields.length == 3 && (fields[2].startsWith("Launch failed") || fields[2].startsWith("Long press needs"));
+            setTextIfChanged(status, failed ? "Action needs attention" : "Ready");
+            setTextIfChanged(detail, failed ? fields[2] : wireless.automatic() ? "Automatic startup on" : "Your actions are ready.");
+        } else if (wireless.prefs().getBoolean("user_stopped", false)) {
+            setTextIfChanged(status, "Stopped");
+            setTextIfChanged(detail, "Tap Start when you’re ready.");
+        } else if (current != null && current.startsWith("Error|")) {
+            setTextIfChanged(status, "Needs attention");
+            setTextIfChanged(detail, current.split("\\|", 3)[2]);
+        } else {
+            setTextIfChanged(status, paired ? "Not running" : "Setup needed");
+            setTextIfChanged(detail, wireless.message.isEmpty() ? "Finish setup to use your button." : wireless.message);
+        }
+    }
+    private static void setTextIfChanged(TextView view, String value) {
+        if (!TextUtils.equals(view.getText(), value)) view.setText(value);
+    }
     void requestSetupPermissions(){ArrayList<String> missing=new ArrayList<>();if(!setup.localAllowed())missing.add("android.permission.ACCESS_LOCAL_NETWORK");if(!wireless.paired()&&!setup.notificationsAllowed())missing.add("android.permission.POST_NOTIFICATIONS");if(!missing.isEmpty())requestPermissions(missing.toArray(new String[0]),3);}
     void requestPairingPermissions(){ArrayList<String> missing=new ArrayList<>();if(!setup.localAllowed())missing.add("android.permission.ACCESS_LOCAL_NETWORK");if(!setup.notificationsAllowed())missing.add("android.permission.POST_NOTIFICATIONS");if(!missing.isEmpty()){resumePairingAfterPermission=true;requestPermissions(missing.toArray(new String[0]),3);}}
     public void onRequestPermissionsResult(int code,String[] permissions,int[] grants){super.onRequestPermissionsResult(code,permissions,grants);setup.refresh();if(resumePairingAfterPermission){resumePairingAfterPermission=false;if(setup.localAllowed()&&setup.notificationsAllowed())setup.pairWithCode();}}
@@ -122,12 +187,21 @@ public final class MainActivity extends AppCompatActivity {
     }}
     private void toast(String message){Toast.makeText(this,message,Toast.LENGTH_LONG).show();}
     private int dp(int value){return Ui.dp(this,value);}
-    protected void onResume(){super.onResume();if(updates!=null){updates.resumed();updates.check(false);}resumed=true;handler.post(poll);showSelections();
+    protected void onResume(){super.onResume();resumed=true;resumeGeneration++;watchStatus();handler.post(poll);if(updates!=null){updates.resumed();updates.check(false);}showSelections();
         boolean pendingAutomatic=wireless.prefs().getBoolean("automatic_requested",false)&&setup.wifiDebugging();
         if((!autoAttempt||pendingAutomatic)&&wireless.paired()&&!wireless.prefs().getBoolean("user_stopped",false)&&setup.localAllowed()){
             autoAttempt=true;try{String current=mailbox.readStatus(System.currentTimeMillis());if(current==null||!current.startsWith("Listening|")||!Helper.VERSION.equals(mailbox.runningVersion())||wireless.prefs().getBoolean("automatic_requested",false)||wireless.automatic())wireless.start();}catch(IOException ignored){}
         }
     }
-    protected void onPause(){resumed=false;handler.removeCallbacks(poll);super.onPause();}
+    protected void onPause(){
+        resumed=false;
+        if (statusObserver != null) {
+            statusObserver.stopWatching();
+            statusObserver = null;
+        }
+        handler.removeCallbacks(statusChanged);
+        handler.removeCallbacks(poll);
+        super.onPause();
+    }
     protected void onDestroy(){worker.shutdownNow();if(updates!=null)updates.close();super.onDestroy();}
 }

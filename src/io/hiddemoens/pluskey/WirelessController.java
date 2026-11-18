@@ -3,6 +3,7 @@ package io.hiddemoens.pluskey;
 import android.app.*;
 import android.content.*;
 import android.os.Build;
+import android.os.SystemClock;
 import java.io.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -38,10 +39,21 @@ final class WirelessController {
     }
     void start() { operation(() -> {
         Mailbox box=new Mailbox(context.getExternalFilesDir(null));
-        String current=box.readStatus(System.currentTimeMillis());
-        if(current!=null && current.startsWith("Listening|") && Helper.VERSION.equals(box.runningVersion()) && !prefs().getBoolean("automatic_requested",false)){
-            if(automatic())setDebugging(false);
-            message="Helper ready";return;
+        if(Helper.VERSION.equals(box.runningVersion())&&!prefs().getBoolean("automatic_requested",false)){
+            String current=box.readStatus(System.currentTimeMillis());
+            if(current==null){
+                message="Checking helper…";
+                box.requestStatus();
+                long deadline=SystemClock.elapsedRealtime()+Mailbox.REQUEST_FALLBACK_MS+500;
+                do{
+                    Thread.sleep(100);
+                    current=box.readStatus(System.currentTimeMillis());
+                }while(current==null&&SystemClock.elapsedRealtime()<deadline);
+            }
+            if(current!=null&&current.startsWith("Listening|")){
+                if(automatic())setDebugging(false);
+                message="Helper ready";return;
+            }
         }
         startHelper();
     }, null); }
