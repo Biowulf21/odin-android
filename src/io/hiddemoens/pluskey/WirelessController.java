@@ -3,7 +3,7 @@ package io.hiddemoens.pluskey;
 import android.app.*;
 import android.content.*;
 import android.os.Build;
-import android.os.SystemClock;
+import android.os.FileObserver;
 import java.io.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -23,6 +23,7 @@ final class WirelessController {
     volatile String message = "";
     volatile String permissionResult="";
     private static final String CHANNEL = "wireless_setup";
+    private static final long STATUS_RESPONSE_TIMEOUT_MS = 3_500;
     private WirelessController(Context context) {
         this.context = context; discovery = new LocalDiscovery(context);
         if(prefs().getInt("automatic_consent_revision",0)<2)prefs().edit().putBoolean("automatic_requested",false).apply();
@@ -43,12 +44,7 @@ final class WirelessController {
             String current=box.readStatus(System.currentTimeMillis());
             if(current==null){
                 message="Checking helper…";
-                box.requestStatus();
-                long deadline=SystemClock.elapsedRealtime()+Mailbox.REQUEST_FALLBACK_MS+500;
-                do{
-                    Thread.sleep(100);
-                    current=box.readStatus(System.currentTimeMillis());
-                }while(current==null&&SystemClock.elapsedRealtime()<deadline);
+                current=requestHelperStatus(box);
             }
             if(current!=null&&current.startsWith("Listening|")){
                 if(automatic())setDebugging(false);
@@ -57,6 +53,26 @@ final class WirelessController {
         }
         startHelper();
     }, null); }
+    private String requestHelperStatus(Mailbox box) throws IOException, InterruptedException {
+        File directory = context.getExternalFilesDir(null);
+        if (directory == null) return null;
+        CountDownLatch response = new CountDownLatch(1);
+        FileObserver observer = new FileObserver(directory, FileObserver.MOVED_TO) {
+            @Override public void onEvent(int event, String path) {
+                if (Mailbox.STATUS_FILE.equals(path)) response.countDown();
+            }
+        };
+        try {
+            observer.startWatching();
+            box.requestStatus();
+            String current = box.readStatus(System.currentTimeMillis());
+            if (current != null) return current;
+            response.await(STATUS_RESPONSE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            return box.readStatus(System.currentTimeMillis());
+        } finally {
+            observer.stopWatching();
+        }
+    }
     void pair(String code, int manualPort, Runnable finished) {
         if (!Options.validCode(code)) { message = "Enter six-digit pairing code"; if (finished != null) finished.run(); return; }
         operation(() -> {

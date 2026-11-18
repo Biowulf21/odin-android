@@ -30,15 +30,15 @@ Developed and tested on OnePlus 15 (CPH2747), Android 17 / OxygenOS 17. This is 
 
 Long-press threshold is 500 ms. Short press triggers on release. Choose Managed by OnePlus for native long press; otherwise set native assignment to Do nothing.
 
-Flashlight, sound, media, volume, and lock actions can run while locked. Apps, shortcuts, and other actions wake the screen and run once you unlock within 30 seconds. A newer custom press replaces any pending action. Screen-off operation depends on the phone delivering Plus Key events during standby.
+Flashlight, sound, media, volume, and lock actions can run while locked. On Android 16 or later, apps, shortcuts, and other actions can wake the screen and run once you unlock within 30 seconds, provided the firmware delivers the required unlock callbacks. A newer custom press replaces any pending action. Screen-off operation depends on the phone delivering Plus Key events during standby.
 
 ## USB startup fallback
 
 If local pairing cannot start helper, install APK and open app once, enable USB debugging and authorize computer. From directory containing APK, run:
 
 ```sh
-adb install -r PlusKey-1.4.1.apk
-adb push PlusKey-1.4.1.apk /data/local/tmp/plus-lens-helper.apk
+adb install -r PlusKey-1.4.2.apk
+adb push PlusKey-1.4.2.apk /data/local/tmp/plus-lens-helper.apk
 adb shell chmod 444 /data/local/tmp/plus-lens-helper.apk
 adb shell cmd package list packages -U io.hiddemoens.pluskey
 ```

@@ -5,7 +5,6 @@ final class Mailbox {
     static final String PREVIEW_REQUEST = "preview-request";
     static final String STATUS_REQUEST = "status-request";
     static final String STATUS_FILE = "helper-status";
-    static final long REQUEST_FALLBACK_MS = 3_000;
     private static final long STATUS_MAX_AGE_MS = 7_000;
     private static final long STATUS_REFRESH_AGE_MS = 2_000;
     private final File dir;

@@ -11,12 +11,10 @@ import java.util.concurrent.*;
 /** Runs as shell through app_process. No ordinary Android service is installed. */
 public final class Helper {
     static final String SOCKET = "io.hiddemoens.pluskey.helper.v1";
-    static final String VERSION = "1.4.1";
+    static final String VERSION = "1.4.2";
     static final String ONEPLUS_ACTION_SETTING = "oplus_action_button_switch_state";
     static final String LENS = "com.google.ar.lens/com.google.vr.apps.ornament.app.lens.LensLauncherActivity";
     private static final long UNLOCK_TIMEOUT_MS = 30_000;
-    private static final long UNLOCK_CHECK_INTERVAL_MS = 500;
-    private static final long UNLOCK_CALLBACK_FALLBACK_MS = 2_000;
     private volatile boolean running = true;
     private final ScheduledThreadPoolExecutor actions = new ScheduledThreadPoolExecutor(1, task -> {
         Thread thread = new Thread(task, "PlusKey-actions");
@@ -120,10 +118,6 @@ public final class Helper {
         };
         try {
             observer.startWatching();
-        } catch (RuntimeException error) {
-            System.err.println("Mailbox notifications unavailable: " + error);
-        }
-        try {
             String published = null;
             while (running) {
                 if (mailbox.stopRequested()) {
@@ -137,12 +131,11 @@ public final class Helper {
                     publishStatus(status, false);
                     published = status;
                 }
-                // Also check request files when filesystem notifications are unavailable.
-                mailboxChanged.poll(Mailbox.REQUEST_FALLBACK_MS, TimeUnit.MILLISECONDS);
+                mailboxChanged.take();
             }
         } catch (InterruptedException ignored) {
             Thread.currentThread().interrupt();
-        } catch (IOException error) {
+        } catch (IOException | RuntimeException error) {
             System.err.println("Status storage unavailable; stopping helper: " + error);
             try { stop(); } catch (IOException ignored) { }
         } finally {
@@ -240,8 +233,6 @@ public final class Helper {
             } else if (preview) {
                 last = "Skipped preview: phone locked, asleep, or state unavailable";
             } else {
-                command("/system/bin/input", "keyevent", "KEYCODE_WAKEUP");
-                last = "Waiting for unlock";
                 pendingUnlock = new PendingUnlock(target, longPress);
                 pendingUnlock.start();
             }
@@ -256,20 +247,25 @@ public final class Helper {
     private final class PendingUnlock {
         final String target;
         final boolean longPress;
-        final long deadline = SystemClock.elapsedRealtime() + UNLOCK_TIMEOUT_MS;
+        long deadline;
         Runnable unwatch;
-        ScheduledFuture<?> fallback;
+        ScheduledFuture<?> timeout;
 
         PendingUnlock(String target, boolean longPress) {
             this.target = target;
             this.longPress = longPress;
         }
 
-        void start() {
+        void start() throws Exception {
             try {
                 unwatch = DeviceActions.watchUnlock(actions, this::check);
+                command("/system/bin/input", "keyevent", "KEYCODE_WAKEUP");
+                last = "Waiting for unlock";
+                deadline = SystemClock.elapsedRealtime() + UNLOCK_TIMEOUT_MS;
+                timeout = actions.schedule(this::expire, UNLOCK_TIMEOUT_MS, TimeUnit.MILLISECONDS);
             } catch (Exception error) {
-                System.err.println("Unlock callbacks unavailable: " + error.getClass().getSimpleName());
+                finish();
+                throw error;
             }
             // Recheck after registration in case the phone unlocked during setup.
             check();
@@ -277,7 +273,7 @@ public final class Helper {
 
         void finish() {
             pendingUnlock = null;
-            if (fallback != null) fallback.cancel(false);
+            if (timeout != null) timeout.cancel(false);
             if (unwatch != null) {
                 try {
                     unwatch.run();
@@ -285,6 +281,13 @@ public final class Helper {
                     System.err.println("Could not unregister unlock callbacks: " + error);
                 }
             }
+        }
+
+        void expire() {
+            if (!running || pendingUnlock != this) return;
+            last = "Skipped: unlock timed out";
+            finish();
+            mailboxChanged.offer(true);
         }
 
         void check() {
@@ -295,14 +298,6 @@ public final class Helper {
                 } else if (!target.equals(selectedTarget(longPress))) {
                     last = "Skipped: action changed while waiting for unlock";
                 } else if (!isAwakeAndUnlocked()) {
-                    if (fallback == null) {
-                        long interval = unwatch == null ? UNLOCK_CHECK_INTERVAL_MS : UNLOCK_CALLBACK_FALLBACK_MS;
-                        long remaining = deadline - SystemClock.elapsedRealtime();
-                        fallback = actions.schedule(() -> {
-                            fallback = null;
-                            check();
-                        }, Math.min(interval, remaining), TimeUnit.MILLISECONDS);
-                    }
                     return;
                 } else if (longPress && !customLongPressEnabled()) {
                     last = "Long press needs OnePlus action set to Do nothing";

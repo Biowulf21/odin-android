@@ -39,7 +39,9 @@ final class DeviceActions {
             && !ctx.getSystemService(KeyguardManager.class).isKeyguardLocked();
     }
     static Runnable watchUnlock(Executor executor, Runnable changed) throws Exception {
-        if (Build.VERSION.SDK_INT < 36) return null;
+        if (Build.VERSION.SDK_INT < 36) {
+            throw new IllegalStateException("Unlock callbacks require Android 16 or later");
+        }
         Context ctx = context();
         DisplayManager displays = ctx.getSystemService(DisplayManager.class);
         KeyguardManager keyguard = ctx.getSystemService(KeyguardManager.class);
