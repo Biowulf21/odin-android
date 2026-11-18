@@ -11,7 +11,7 @@ import java.util.concurrent.*;
 /** Runs through app_process with the identity authorized by ADB or Shizuku. */
 public final class Helper {
     static final String SOCKET = "io.hiddemoens.pluskey.helper.v1";
-    static final String VERSION = "1.5.1";
+    static final String VERSION = BuildConfig.VERSION_NAME;
     static final String ONEPLUS_ACTION_SETTING = "oplus_action_button_switch_state";
     static final String LENS = "com.google.ar.lens/com.google.vr.apps.ornament.app.lens.LensLauncherActivity";
     private static final long UNLOCK_TIMEOUT_MS = 30_000;
@@ -217,6 +217,18 @@ public final class Helper {
         }
     }
 
+    private static void wakeDisplay() throws Exception {
+        if (android.os.Build.VERSION.SDK_INT >= 37) {
+            try {
+                String reply = command("/system/bin/cmd", "power", "wakeup");
+                if (reply.trim().isEmpty()) return;
+            } catch (IOException unsupported) {
+                // Vendor builds may omit the power shell command.
+            }
+        }
+        command("/system/bin/input", "keyevent", "KEYCODE_WAKEUP");
+    }
+
     private void launch(int gesture, boolean preview) {
         try {
             String target = mailbox.selected(gesture);
@@ -229,7 +241,7 @@ public final class Helper {
             if (!preview && pendingUnlock != null) pendingUnlock.finish();
             if ((!preview && Policy.mayRunWhileLocked(target)) || isAwakeAndUnlocked()) {
                 if (!preview && Policy.shouldWakeScreen(target)) {
-                    command("/system/bin/input", "keyevent", "KEYCODE_WAKEUP");
+                    wakeDisplay();
                 }
                 runTarget(target);
             } else if (preview) {
@@ -260,8 +272,8 @@ public final class Helper {
 
         void start() throws Exception {
             try {
+                wakeDisplay();
                 unwatch = DeviceActions.watchUnlock(actions, this::check);
-                command("/system/bin/input", "keyevent", "KEYCODE_WAKEUP");
                 last = "Waiting for unlock";
                 deadline = SystemClock.elapsedRealtime() + UNLOCK_TIMEOUT_MS;
                 timeout = actions.schedule(this::expire, UNLOCK_TIMEOUT_MS, TimeUnit.MILLISECONDS);
