@@ -177,7 +177,7 @@ final class ChoicePicker {
             for (ResolveInfo app : pm.queryIntentActivities(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)) {
                 if (!app.activityInfo.exported || context.getPackageName().equals(app.activityInfo.packageName)) continue;
                 String target = new ComponentName(app.activityInfo.packageName, app.activityInfo.name).flattenToString();
-                locked.computeIfAbsent(app.activityInfo.packageName, owner -> Targets.lockedActivities(context, owner));
+                locked.computeIfAbsent(app.activityInfo.packageName, owner -> Targets.lockedActivities(context, owner, cameras.contains(owner)));
                 found.add(new Entry(new Targets.Choice(app.loadLabel(pm).toString(), target), app));
             }
             Set<String> launcherPackages = new HashSet<>();

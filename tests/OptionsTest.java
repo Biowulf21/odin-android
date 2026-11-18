@@ -19,6 +19,11 @@ public final class OptionsTest {
         CoreTest.check(!Options.validTarget("configure:com.example/.Main"), "setup entry cannot be assigned");
         String configured = "configured:28cb4b53-cb15-4c0b-97fb-7b00776fd841";
         CoreTest.check(Options.validTarget(configured) && !Policy.mayRunWhileLocked(configured), "configured shortcuts wait for unlock");
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        CoreTest.check(!Options.offerLockedLabel(true, "Camera", "Camera", seen), "secure camera replaces generic camera choice");
+        CoreTest.check(Options.offerLockedLabel(true, "Camera", "Scanner", seen), "separate camera feature remains");
+        CoreTest.check(!Options.offerLockedLabel(true, "Camera", " Scanner ", seen), "duplicate locked label hidden");
+        CoreTest.check(Options.offerLockedLabel(false, "Photos", "Photos", seen), "generic locked choice remains without secure camera");
         String secureCamera = Options.SECURE_CAMERA + "com.example.camera";
         CoreTest.check(Policy.shouldWakeScreen(secureCamera), "secure camera wakes display");
         CoreTest.check(Options.validTarget(secureCamera) && Policy.mayRunWhileLocked(secureCamera), "secure camera allowed while locked");

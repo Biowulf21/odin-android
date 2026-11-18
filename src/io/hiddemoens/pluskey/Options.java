@@ -11,6 +11,11 @@ final class Options {
     }
     static final String[] ACTIONS={"action:torch","action:sound_cycle","action:vibrate_toggle","action:silent_toggle","action:silent","action:vibrate","action:ring","action:screenshot","action:lock","action:notifications","action:quick_settings","action:media_toggle","action:media_next","action:media_previous","action:volume_up","action:volume_down","action:assistant"};
     static final String LOCKED_ACTIVITY = "locked-activity:";
+    static boolean offerLockedLabel(boolean hasSecureCamera, String appLabel, String activityLabel, java.util.Set<String> seen) {
+        String label = activityLabel.trim();
+        if (hasSecureCamera && label.equalsIgnoreCase(appLabel.trim())) return false;
+        return seen.add(label.toLowerCase(java.util.Locale.ROOT));
+    }
     static boolean isLockedActivity(String target) {
         return target != null && target.startsWith(LOCKED_ACTIVITY)
             && validComponent(target.substring(LOCKED_ACTIVITY.length()));

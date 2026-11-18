@@ -57,7 +57,7 @@ final class Targets {
         }catch(Exception ignored){}
         return found;
     }
-    static List<Choice> lockedActivities(Context context, String owner) {
+    static List<Choice> lockedActivities(Context context, String owner, boolean hasSecureCamera) {
         List<Choice> choices = new ArrayList<>();
         PackageManager pm = context.getPackageManager();
         String android = "http://schemas.android.com/apk/res/android";
@@ -79,12 +79,16 @@ final class Targets {
             if (declared.isEmpty()) return choices;
             ActivityInfo[] activities = pm.getPackageInfo(owner, PackageManager.GET_ACTIVITIES).activities;
             if (activities == null) return choices;
+            String appLabel = pm.getApplicationLabel(pm.getApplicationInfo(owner, 0)).toString();
+            Set<String> labels = new HashSet<>();
             for (ActivityInfo info : activities) {
                 if (!declared.contains(info.targetActivity == null ? info.name : info.targetActivity)
                     || !info.exported || info.permission != null || !info.enabled) continue;
                 ComponentName component = new ComponentName(owner, info.name);
                 if (pm.resolveActivity(new Intent().setComponent(component), 0) == null) continue;
-                choices.add(new Choice(info.loadLabel(pm) + " · Open while locked",
+                String label = info.loadLabel(pm).toString().trim();
+                if (!Options.offerLockedLabel(hasSecureCamera, appLabel, label, labels)) continue;
+                choices.add(new Choice(label + " · Open while locked",
                     Options.LOCKED_ACTIVITY + component.flattenToString()));
             }
         } catch (PackageManager.NameNotFoundException | Resources.NotFoundException |
