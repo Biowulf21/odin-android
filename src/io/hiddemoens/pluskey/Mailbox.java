@@ -5,36 +5,88 @@ final class Mailbox {
     static final String PREVIEW_REQUEST = "preview-request";
     static final String STATUS_REQUEST = "status-request";
     static final String STATUS_FILE = "helper-status";
+    static final int MIN_CLICK_INTERVAL_MS = 100;
+    static final int MAX_CLICK_INTERVAL_MS = 500;
+    static final int DEFAULT_CLICK_INTERVAL_MS = 200;
+    private static final String CLICK_INTERVAL_FILE = "click-interval";
     private static final long STATUS_MAX_AGE_MS = 7_000;
     private static final long STATUS_REFRESH_AGE_MS = 2_000;
     private final File dir;
-    void selectLong(String target)throws IOException {
-        if(target==null){File file=new File(dir,"long-target");if(file.exists()&&!file.delete())throw new IOException("Could not reset long press");return;}
-        writeTarget("long-target",target);
+    private static String targetFile(int gesture) {
+        switch (gesture) {
+            case KeyPress.SHORT: return "short-target";
+            case KeyPress.LONG: return "long-target";
+            case KeyPress.DOUBLE: return "double-target";
+            case KeyPress.TRIPLE: return "triple-target";
+            default: throw new IllegalArgumentException("Unknown press gesture");
+        }
     }
-    String selectedLong()throws IOException {return readTarget("long-target");}
-    void select(String target) throws IOException {
-        writeTarget("short-target",target);
+
+    void select(int gesture, String target) throws IOException {
+        String name = targetFile(gesture);
+        if (gesture != KeyPress.SHORT && target == null) {
+            File file = new File(dir, name);
+            if (file.exists() && !file.delete()) throw new IOException("Could not clear selected action");
+        } else {
+            writeTarget(name, target);
+        }
     }
+
+    boolean multiPressEnabled() {
+        return new File(dir, targetFile(KeyPress.DOUBLE)).exists()
+            || new File(dir, targetFile(KeyPress.TRIPLE)).exists();
+    }
+
+    int activeClickInterval() {
+        return multiPressEnabled() ? clickInterval() : 0;
+    }
+
+    int clickInterval() {
+        if (dir != null) {
+            try (DataInputStream input = new DataInputStream(new FileInputStream(new File(dir, CLICK_INTERVAL_FILE)))) {
+                int interval = input.readUnsignedShort();
+                if (validClickInterval(interval)) return interval;
+            } catch (IOException ignored) { }
+        }
+        return DEFAULT_CLICK_INTERVAL_MS;
+    }
+
+    void setClickInterval(int interval) throws IOException {
+        if (!validClickInterval(interval)) throw new IllegalArgumentException("Invalid click interval");
+        if (dir == null) throw new IOException("App storage unavailable");
+        File next = new File(dir, CLICK_INTERVAL_FILE + ".next");
+        try (DataOutputStream output = new DataOutputStream(new FileOutputStream(next))) {
+            output.writeShort(interval);
+        }
+        if (!next.renameTo(new File(dir, CLICK_INTERVAL_FILE))) throw new IOException("Could not save click interval");
+    }
+
+    private static boolean validClickInterval(int interval) {
+        return interval >= MIN_CLICK_INTERVAL_MS && interval <= MAX_CLICK_INTERVAL_MS;
+    }
+
     private void writeTarget(String name,String target)throws IOException {
         if (!Options.validTarget(target)) throw new IllegalArgumentException("Choose an app or action");
         File next = new File(dir, name+".next");
         try (FileOutputStream output = new FileOutputStream(next)) { output.write(target.getBytes("UTF-8")); }
         if (!next.renameTo(new File(dir, name))) throw new IOException("Could not save selected app");
     }
-    String selected() throws IOException {
-        return readTarget("short-target");
+    String selected(int gesture) throws IOException {
+        return readTarget(targetFile(gesture));
     }
     private String readTarget(String name)throws IOException {
         File file = new File(dir, name);
-        if (!file.exists()) return null;
-        if (file.length() > 32768) throw new IOException("Invalid selection; choose action again");
         try (FileInputStream input = new FileInputStream(file)) {
-            byte[] bytes = new byte[(int)file.length()];
+            long size = input.getChannel().size();
+            if (size > 32768) throw new IOException("Invalid selection; choose action again");
+            byte[] bytes = new byte[(int)size];
             new DataInputStream(input).readFully(bytes);
             String target = new String(bytes, "UTF-8");
             if (!Options.validTarget(target)) throw new IOException("Invalid selection; choose action again");
             return target;
+        } catch (FileNotFoundException error) {
+            if (!file.exists()) return null;
+            throw error;
         }
     }
     Mailbox(File dir) { this.dir = dir; }
@@ -81,8 +133,8 @@ final class Mailbox {
         writeRequest(STOP_REQUEST, 1);
     }
     boolean stopRequested() { return dir != null && new File(dir, STOP_REQUEST).exists(); }
-    void requestPreview(boolean longPress) throws IOException {
-        writeRequest(PREVIEW_REQUEST, longPress ? 2 : 1);
+    void requestPreview(int gesture) throws IOException {
+        writeRequest(PREVIEW_REQUEST, gesture);
     }
     private void writeRequest(String name, int value) throws IOException {
         if (dir == null) throw new IOException("App storage unavailable");
@@ -97,7 +149,7 @@ final class Mailbox {
         if (!file.renameTo(claimed)) throw new IOException("Could not read preview request");
         try (FileInputStream input = new FileInputStream(claimed)) {
             int value = input.read();
-            return value == 1 || value == 2 ? value : 0;
+            return value >= KeyPress.SHORT && value <= KeyPress.TRIPLE ? value : 0;
         } finally {
             claimed.delete();
         }

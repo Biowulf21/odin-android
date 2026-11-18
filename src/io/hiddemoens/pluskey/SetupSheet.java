@@ -12,6 +12,7 @@ final class SetupSheet {
     private final MainActivity activity;
     private final WirelessController wireless;
     private AlertDialog dialog;private LinearLayout body;private String previous="";
+    private boolean wirelessOnly;
     SetupSheet(MainActivity activity,WirelessController wireless){this.activity=activity;this.wireless=wireless;}
     boolean localAllowed(){return Build.VERSION.SDK_INT<37||activity.checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK")==PackageManager.PERMISSION_GRANTED;}
     boolean notificationsAllowed(){return Build.VERSION.SDK_INT<33||activity.checkSelfPermission("android.permission.POST_NOTIFICATIONS")==PackageManager.PERMISSION_GRANTED;}
@@ -21,12 +22,22 @@ final class SetupSheet {
         if(dialog!=null&&dialog.isShowing()){refresh();return;}
         body=Ui.column(activity);body.setPadding(Ui.dp(activity,24),0,Ui.dp(activity,24),Ui.dp(activity,16));ScrollView page=new ScrollView(activity);page.addView(body);
         dialog=new MaterialAlertDialogBuilder(activity).setTitle("Set up your button").setView(page).setPositiveButton("Done",null).setNeutralButton("More options",(d,w)->advanced()).create();
-        previous="";dialog.show();refresh();
+        wirelessOnly=false;previous="";dialog.show();refresh();
     }
     void refresh(){
         if(dialog==null||!dialog.isShowing())return;
-        String state=developerEnabled()+"/"+localAllowed()+"/"+notificationsAllowed()+"/"+wireless.paired()+"/"+wifiDebugging()+"/"+wireless.automatic()+"/"+wireless.busy.get();
+        boolean shizuku = !wirelessOnly && ShizukuConnection.running();
+        boolean authorized = shizuku && ShizukuConnection.authorized();
+        String state=developerEnabled()+"/"+localAllowed()+"/"+notificationsAllowed()+"/"+wireless.paired()+"/"+wifiDebugging()+"/"+wireless.automatic()+"/"+wireless.busy.get()+"/"+shizuku+"/"+authorized+"/"+wireless.message;
         if(state.equals(previous))return;previous=state;body.removeAllViews();
+        if (shizuku) {
+            text("Shizuku",22,false);
+            text(authorized ? "Plus Key prefers Shizuku while it’s running." : "Allow Plus Key to start your button through Shizuku.",15,true);
+            if (wireless.message.startsWith("Setup needed:")) text(wireless.message,14,true);
+            if (!wireless.busy.get()) button(authorized ? "Start" : "Allow Shizuku",v->activity.authorizeShizuku());
+            button("Wireless debugging setup",v->{wirelessOnly=true;refresh();});
+            return;
+        }
         if(!developerEnabled()){
             text("Enable phone setup",22,false);text("Open About device → Version and tap Build number seven times. Android requires this once.",15,true);
             button("Open About device",v->open(new Intent(Settings.ACTION_DEVICE_INFO_SETTINGS),new Intent(Settings.ACTION_SETTINGS)));return;

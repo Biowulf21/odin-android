@@ -1,4 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="io.hiddemoens.pluskey" android:versionCode="9" android:versionName="1.4.2">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="io.hiddemoens.pluskey" android:versionCode="12" android:versionName="1.5">
     <uses-sdk android:minSdkVersion="30" android:targetSdkVersion="37" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
@@ -11,6 +11,7 @@
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <queries><package android:name="com.google.ar.lens" /><package android:name="com.oplus.gesture" /><intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent></queries>
     <application android:label="Plus Key" android:theme="@style/Theme.PlusKey" android:icon="@drawable/icon" android:allowBackup="false" android:supportsRtl="true" android:extractNativeLibs="true">
+        <provider android:name="rikka.shizuku.ShizukuProvider" android:authorities="${applicationId}.shizuku" android:exported="true" android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
         <provider android:name="androidx.core.content.FileProvider" android:authorities="io.hiddemoens.pluskey.updates" android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/update_paths" />
         </provider>

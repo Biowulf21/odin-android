@@ -13,11 +13,17 @@ final class ChoicePicker {
     interface Selected{void select(Targets.Choice choice);}
     private final Context context;private final Selected selected;
     ChoicePicker(Context context,Selected selected){this.context=context;this.selected=selected;}
-    void show(boolean longPress){
-        ArrayList<String> labels=new ArrayList<>();if(longPress)labels.add("Managed by OnePlus");labels.add("Action");labels.add("App");
-        new MaterialAlertDialogBuilder(context).setTitle(longPress?"Long press":"Short press").setItems(labels.toArray(new String[0]),(d,index)->{
-            String choice=labels.get(index);if(choice.equals("App"))apps();else if(choice.equals("Action"))actions();else selected.select(new Targets.Choice("Managed by OnePlus",null));
-        }).setNegativeButton("Cancel",null).show();
+    void show(String title, String unsetLabel){
+        ArrayList<String> labels = new ArrayList<>();
+        if (unsetLabel != null) labels.add(unsetLabel);
+        labels.add("Action");
+        labels.add("App");
+        new MaterialAlertDialogBuilder(context).setTitle(title).setItems(labels.toArray(new String[0]), (d, index) -> {
+            String choice = labels.get(index);
+            if (choice.equals("App")) apps();
+            else if (choice.equals("Action")) actions();
+            else selected.select(new Targets.Choice(unsetLabel, null));
+        }).setNegativeButton("Cancel", null).show();
     }
     private void actions(){
         ArrayList<Targets.Choice> choices=new ArrayList<>();

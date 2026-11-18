@@ -13,3 +13,5 @@ The app uses RSA identity and PAKE/TLS pairing from maintained libraries rather 
 Additional local libadb correction: AdbStream/AdbInputStream drain queued and buffered command output after remote close, then return EOF rather than waiting indefinitely. Regression covered by tests/AdbStreamTest.java and test-adb-stream.sh (test uses initialized stream fixture without Android sockets). Raw ADB shell startup detaches helper using setsid/nohup and waits for process existence before closing session.
 
 Material Components Android 1.14.0 and AndroidX dependencies resolve through Google Maven using Gradle. Apache-2.0; see https://github.com/material-components/material-components-android and https://developer.android.com/jetpack/androidx. Build tooling and these dependencies require network on first build.
+
+Shizuku API and provider 13.1.5 resolve through Maven Central using Gradle. Source at https://github.com/RikkaApps/Shizuku-API; MIT license in licenses/shizuku-api-LICENSE.

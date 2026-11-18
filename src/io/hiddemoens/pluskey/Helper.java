@@ -8,10 +8,10 @@ import android.os.SystemClock;
 import java.io.*;
 import java.util.concurrent.*;
 
-/** Runs as shell through app_process. No ordinary Android service is installed. */
+/** Runs through app_process with the identity authorized by ADB or Shizuku. */
 public final class Helper {
     static final String SOCKET = "io.hiddemoens.pluskey.helper.v1";
-    static final String VERSION = "1.4.2";
+    static final String VERSION = "1.5";
     static final String ONEPLUS_ACTION_SETTING = "oplus_action_button_switch_state";
     static final String LENS = "com.google.ar.lens/com.google.vr.apps.ornament.app.lens.LensLauncherActivity";
     private static final long UNLOCK_TIMEOUT_MS = 30_000;
@@ -37,17 +37,20 @@ public final class Helper {
         actions.setRemoveOnCancelPolicy(true);
     }
 
-    private void enqueue(boolean longPress, boolean preview) {
+    private void enqueue(int gesture, boolean preview) {
         if (!running) return;
         try {
             actions.execute(() -> {
-                if (running) launch(longPress, preview);
+                if (running) launch(gesture, preview);
             });
         } catch (RejectedExecutionException ignored) { }
     }
 
     public static void main(String[] args) throws Exception {
-        if (android.os.Process.myUid() != 2000 || args.length != 1)
+        int uid = android.os.Process.myUid();
+        boolean manual = uid == 2000 && args.length == 1;
+        boolean shizuku = (uid == 0 || uid == 2000) && args.length == 2 && "shizuku".equals(args[1]);
+        if (!manual && !shizuku)
             throw new SecurityException("Start helper using supplied USB script");
         Helper helper = new Helper();
         helper.controlThread = Thread.currentThread();
@@ -68,8 +71,8 @@ public final class Helper {
             while (helper.running) {
                 try (LocalSocket socket = helper.server.accept()) {
                     if (!helper.running) break;
-                    int uid = socket.getPeerCredentials().getUid();
-                    if (uid != helper.appUid && uid != 2000) continue;
+                    int peer = socket.getPeerCredentials().getUid();
+                    if (peer != helper.appUid && peer != 2000 && peer != uid) continue;
                     socket.setSoTimeout(1000);
                     BufferedReader input = new BufferedReader(new InputStreamReader(socket.getInputStream()));
                     String command = input.readLine();
@@ -125,7 +128,7 @@ public final class Helper {
                     break;
                 }
                 int preview = mailbox.consumePreview();
-                if (preview != 0) enqueue(preview == 2, true);
+                if (preview != 0) enqueue(preview, true);
                 String status = statusLine();
                 if (mailbox.consumeStatusRequest() || !status.equals(published)) {
                     publishStatus(status, false);
@@ -166,21 +169,21 @@ public final class Helper {
             state = "Listening";
             mailboxChanged.offer(true);
             System.out.println("Listening on " + device);
-            ScheduledThreadPoolExecutor holdTimer = new ScheduledThreadPoolExecutor(1, task -> {
-                Thread thread = new Thread(task, "PlusKey-hold");
+            ScheduledThreadPoolExecutor gestureTimer = new ScheduledThreadPoolExecutor(1, task -> {
+                Thread thread = new Thread(task, "PlusKey-gestures");
                 thread.setDaemon(true);
                 return thread;
             });
-            holdTimer.setRemoveOnCancelPolicy(true);
-            KeyPress key = new KeyPress(holdTimer, () -> enqueue(true, false));
+            gestureTimer.setRemoveOnCancelPolicy(true);
+            KeyPress key = new KeyPress(gestureTimer, gesture -> enqueue(gesture, false), mailbox::activeClickInterval);
             try (BufferedReader input = new BufferedReader(new InputStreamReader(reader.getInputStream()))) {
                 String line;
                 while (running && (line = input.readLine()) != null) {
                     int gesture=key.gesture(line);
-                    if(gesture!=0)enqueue(gesture==2, false);
+                    if(gesture!=0)enqueue(gesture, false);
                 }
             }
-            finally { holdTimer.shutdownNow(); }
+            finally { gestureTimer.shutdownNow(); }
             if (running) throw new IOException("Input reader stopped");
         } catch (Exception e) {
             if (running) {
@@ -193,10 +196,6 @@ public final class Helper {
             Process reader = readerProcess;
             if (reader != null) reader.destroy();
         }
-    }
-
-    private String selectedTarget(boolean longPress) throws Exception {
-        return longPress ? mailbox.selectedLong() : mailbox.selected();
     }
 
     private boolean customLongPressEnabled() throws Exception {
@@ -218,11 +217,11 @@ public final class Helper {
         }
     }
 
-    private void launch(boolean longPress, boolean preview) {
+    private void launch(int gesture, boolean preview) {
         try {
-            String target = selectedTarget(longPress);
-            if (longPress && target == null) return;
-            if (longPress && !customLongPressEnabled()) {
+            String target = mailbox.selected(gesture);
+            if (gesture != KeyPress.SHORT && target == null) return;
+            if (gesture == KeyPress.LONG && !customLongPressEnabled()) {
                 last = "Long press needs OnePlus action set to Do nothing";
                 return;
             }
@@ -233,7 +232,7 @@ public final class Helper {
             } else if (preview) {
                 last = "Skipped preview: phone locked, asleep, or state unavailable";
             } else {
-                pendingUnlock = new PendingUnlock(target, longPress);
+                pendingUnlock = new PendingUnlock(target, gesture);
                 pendingUnlock.start();
             }
         } catch (Exception e) {
@@ -246,14 +245,14 @@ public final class Helper {
     // Callback delivery and all pending-action state use the same action executor.
     private final class PendingUnlock {
         final String target;
-        final boolean longPress;
+        final int gesture;
         long deadline;
         Runnable unwatch;
         ScheduledFuture<?> timeout;
 
-        PendingUnlock(String target, boolean longPress) {
+        PendingUnlock(String target, int gesture) {
             this.target = target;
-            this.longPress = longPress;
+            this.gesture = gesture;
         }
 
         void start() throws Exception {
@@ -295,11 +294,11 @@ public final class Helper {
             try {
                 if (SystemClock.elapsedRealtime() >= deadline) {
                     last = "Skipped: unlock timed out";
-                } else if (!target.equals(selectedTarget(longPress))) {
+                } else if (!target.equals(mailbox.selected(gesture))) {
                     last = "Skipped: action changed while waiting for unlock";
                 } else if (!isAwakeAndUnlocked()) {
                     return;
-                } else if (longPress && !customLongPressEnabled()) {
+                } else if (gesture == KeyPress.LONG && !customLongPressEnabled()) {
                     last = "Long press needs OnePlus action set to Do nothing";
                 } else if (SystemClock.elapsedRealtime() >= deadline) {
                     last = "Skipped: unlock timed out";

@@ -12,14 +12,25 @@ public final class OptionsTest {
         CoreTest.check(Options.validCode("012345") && !Options.validCode("12345") && !Options.validCode("1234567"), "six digit code including leading zero");
         File dir=Files.createTempDirectory("pluslens-choice-").toFile();
         Mailbox box=new Mailbox(dir);
-        box.select("com.example.app/.MainActivity");
-        CoreTest.check("com.example.app/.MainActivity".equals(new Mailbox(dir).selected()), "choice persists across helper restart");
-        box.select("com.other.app/com.other.app.Home");
-        CoreTest.check("com.other.app/com.other.app.Home".equals(box.selected()), "changed choice loaded without restart");
-        CoreTest.check(box.selectedLong()==null,"long press defaults to OnePlus");
-        box.selectLong("action:torch");
-        CoreTest.check("action:torch".equals(new Mailbox(dir).selectedLong()),"long action persists");
-        box.selectLong(null);CoreTest.check(box.selectedLong()==null,"OnePlus choice clears custom long action");
+        box.select(KeyPress.SHORT, "com.example.app/.MainActivity");
+        CoreTest.check("com.example.app/.MainActivity".equals(new Mailbox(dir).selected(KeyPress.SHORT)), "choice persists across helper restart");
+        box.select(KeyPress.SHORT, "com.other.app/com.other.app.Home");
+        CoreTest.check("com.other.app/com.other.app.Home".equals(box.selected(KeyPress.SHORT)), "changed choice loaded without restart");
+        CoreTest.check(box.selected(KeyPress.LONG)==null,"long press defaults to OnePlus");
+        box.select(KeyPress.LONG, "action:torch");
+        CoreTest.check("action:torch".equals(new Mailbox(dir).selected(KeyPress.LONG)),"long action persists");
+        box.select(KeyPress.LONG, null);CoreTest.check(box.selected(KeyPress.LONG)==null,"OnePlus choice clears custom long action");
+        CoreTest.check(!box.multiPressEnabled(), "multi-press defaults to off");
+        box.select(KeyPress.DOUBLE, "action:torch");
+        box.select(KeyPress.TRIPLE, "action:silent");
+        Mailbox reloaded = new Mailbox(dir);
+        CoreTest.check("action:torch".equals(reloaded.selected(KeyPress.DOUBLE)), "double action persists");
+        CoreTest.check("action:silent".equals(reloaded.selected(KeyPress.TRIPLE)), "triple action persists");
+        box.select(KeyPress.DOUBLE, null);
+        CoreTest.check(reloaded.selected(KeyPress.DOUBLE) == null && reloaded.multiPressEnabled(),
+            "clearing double keeps triple enabled");
+        box.select(KeyPress.TRIPLE, null);
+        CoreTest.check(!reloaded.multiPressEnabled(), "clearing both disables multi-press");
         CoreTest.check(Options.validTarget("action:silent")&&!Options.validTarget("action:reboot"),"only supported built-in actions accepted");
         int ringer=2;ringer=Options.ringerMode("action:sound_cycle",ringer);CoreTest.check(ringer==1,"sound cycles to vibrate");
         ringer=Options.ringerMode("action:sound_cycle",ringer);CoreTest.check(ringer==0,"vibrate cycles to silent");
@@ -29,7 +40,7 @@ public final class OptionsTest {
         String shortcut="shortcut:com.example.app:"+java.util.Base64.getUrlEncoder().withoutPadding().encodeToString("#Intent;action=com.example.NEW;component=com.example.app/.Main;end".getBytes("UTF-8"));
         CoreTest.check(Options.validTarget(shortcut),"published shortcut encoding accepted");
         CoreTest.check(!Options.validTarget("shortcut:com.example.app:"+java.util.Base64.getUrlEncoder().encodeToString("--user 10".getBytes("UTF-8"))),"shortcut command injection rejected");
-        try { box.select("com.test/.Main;reboot"); throw new AssertionError("unsafe choice accepted"); }
+        try { box.select(KeyPress.SHORT, "com.test/.Main;reboot"); throw new AssertionError("unsafe choice accepted"); }
         catch (IllegalArgumentException expected) { }
         for(File f:dir.listFiles())f.delete(); dir.delete();
         System.out.println("App choice and pairing input tests passed");

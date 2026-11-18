@@ -33,6 +33,10 @@ final class WirelessController {
     boolean paired() { return prefs().getBoolean("paired", false); }
     boolean canControlDebugging() { return context.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS")==android.content.pm.PackageManager.PERMISSION_GRANTED; }
     boolean automatic() { return prefs().getBoolean("automatic_debugging",false) && canControlDebugging(); }
+    boolean canUseWireless() {
+        return paired() && (Build.VERSION.SDK_INT < 37 || context.checkSelfPermission(
+            "android.permission.ACCESS_LOCAL_NETWORK") == android.content.pm.PackageManager.PERMISSION_GRANTED);
+    }
     void requestAutomatic() { prefs().edit().putBoolean("automatic_requested",true).apply(); start(); }
     void disableAutomatic() { prefs().edit().putBoolean("automatic_debugging",false).putBoolean("automatic_requested",false).apply(); }
     private void setDebugging(boolean enabled)throws IOException {
@@ -40,17 +44,35 @@ final class WirelessController {
     }
     void start() { operation(() -> {
         Mailbox box=new Mailbox(context.getExternalFilesDir(null));
-        if(Helper.VERSION.equals(box.runningVersion())&&!prefs().getBoolean("automatic_requested",false)){
+        boolean shizuku = ShizukuConnection.authorized();
+        if(Helper.VERSION.equals(box.runningVersion())&&(shizuku||!prefs().getBoolean("automatic_requested",false))){
             String current=box.readStatus(System.currentTimeMillis());
             if(current==null){
                 message="Checking helper…";
                 current=requestHelperStatus(box);
             }
             if(current!=null&&current.startsWith("Listening|")){
-                if(automatic())setDebugging(false);
+                if(!shizuku&&automatic())setDebugging(false);
                 message="Helper ready";return;
             }
         }
+        if (shizuku) {
+            if (box.selected(KeyPress.SHORT) == null) throw new IOException("Choose a short-press app first");
+            message = "Starting with Shizuku…";
+            try {
+                ShizukuConnection.start(context);
+                message = "Helper ready";
+                return;
+            } catch (Exception error) {
+                boolean debuggingEnabled = android.provider.Settings.Global.getInt(
+                    context.getContentResolver(), "adb_wifi_enabled", 0) == 1;
+                if (!canUseWireless() || (!automatic() && !debuggingEnabled)) {
+                    String reason = error.getMessage();
+                    throw new IOException(reason == null ? "Shizuku startup timed out" : "Shizuku could not start helper: " + reason, error);
+                }
+            }
+        }
+        if (!canUseWireless()) throw new IOException("Start and authorize Shizuku or set up Wireless debugging");
         startHelper();
     }, null); }
     private String requestHelperStatus(Mailbox box) throws IOException, InterruptedException {
@@ -110,7 +132,7 @@ final class WirelessController {
     }
     private void connectAndStartHelper() throws Exception {
         Mailbox box = new Mailbox(context.getExternalFilesDir(null));
-        if (box.selected() == null) throw new IOException("Choose a short-press app first");
+        if (box.selected(KeyPress.SHORT) == null) throw new IOException("Choose a short-press app first");
         discovery.start();
         int port = awaitPort(false);
         message = "Starting helper…";
