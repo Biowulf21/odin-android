@@ -1,64 +1,42 @@
 # PlusKey
 
-Choose separate actions, apps, or public app shortcuts for short, double, triple, and long presses. Double and triple press are off by default. On fresh installs with a flash, Plus Key defaults long press to Toggle flashlight. Custom long press fires once after 500 ms while held. Successful custom actions give brief native haptic feedback. Choose Managed by OnePlus to use the phone's native assignment. For custom long press, set the OnePlus assignment to Do nothing using the app's settings link. This also removes the “Press and hold…” warning.
+[![Download APK](https://img.shields.io/badge/Download-APK-2EA44F?style=for-the-badge&logo=github)](https://github.com/hiddemoens/PlusKey/releases/latest)
 
-Built-in actions include flashlight, Sound → Vibrate → Silent, two-state sound toggles, individual sound modes, screenshot, lock, notifications, quick settings, media and volume controls.
+Customize the OnePlus Plus Key with separate actions, apps, or app shortcuts for single, double, triple, and long presses. Built-in actions include flashlight, sound modes, screenshot, screen lock, notifications, quick settings, media, and volume.
 
 ## Install and setup
 
-Download newest PlusKey APK from [Releases](https://github.com/hiddemoens/PlusKey/releases/latest). Install APK, then open Plus Key. Existing personal builds update without losing choices. Open Settings in Plus Key for guided setup. Already-completed steps hide automatically. Pair with code opens Android settings and notification for six-digit code; no port entry needed. Keep Android pairing window open while entering code through notification. Notification closes after submission.
+Plus Key works with Shizuku 13 or later or standalone using Wireless debugging. Install the APK from the latest release’s **Assets**, then open **Settings** in Plus Key.
 
-Plus Key prefers [Shizuku](https://shizuku.rikka.app/) 13 or later when it’s running and authorized. Start Shizuku, then open Plus Key Settings and tap **Allow Shizuku**. This skips separate Plus Key pairing. Wireless Debugging remains available when Shizuku is unavailable.
+- **With Shizuku** — Start Shizuku and tap **Allow Shizuku** in Plus Key. [Shizuku setup](https://shizuku.rikka.app/)
+- **Standalone** — Follow the guided Wireless debugging setup and tap **Pair with code**. Keep Android’s pairing window open while entering the six-digit code in the Plus Key notification. After pairing, tap **Start** to reuse the saved connection.
 
-After pairing, Start uses saved local connection. Optional automatic startup requests one protected-settings permission so app can enable Wireless debugging for startup and disable it when ready. On this OnePlus firmware, permission grant is blocked until Developer options → Disable system optimisation is enabled. This native setting may increase background power usage. Manual startup remains available.
+Optional **Automatic startup** uses a protected-settings permission to turn on Wireless debugging while starting the helper and turn it off once ready. OxygenOS may require **Disable system optimisation** in Developer options, which can increase background power use. Android may ask for approval on a new Wi-Fi network. If the button disconnects after a reboot or system termination, open Plus Key and tap **Start**.
 
-APK stays installed across reboot. Helper may need restarting after reboot or system termination. Open Plus Key and tap Start if the button is disconnected. Automatic startup manages the connection while the app starts the helper. Android may still require approval for each new Wi-Fi network.
+## Button behavior
 
-## Behavior and privacy
+- **Single, double, and triple press** — Double and triple press are off by default, so single press fires on release. When either is enabled, **Click interval** sets the time to start the next press. It defaults to 200 ms and can be adjusted from 100 to 500 ms.
+- **Long press** — Toggle flashlight is the default on fresh installs with a flash. Custom long press fires once after 500 ms. Set the OnePlus assignment to **Do nothing** for custom long press, or choose **Managed by OnePlus** to keep the native action.
+- **While locked** — Flashlight, sound, media, volume, and lock actions can run while locked. On Android 16 or later, apps, shortcuts, and other actions can wake the screen and run if you unlock within 30 seconds and the firmware delivers the unlock callback. A new custom press replaces any pending action.
 
-Native button events are observed, not suppressed. Published static app shortcuts are offered when accessible; private or dynamic launcher shortcuts may not appear. No account or analytics. Optional automatic update checks contact GitHub once daily when app opens; disable them in Settings → More options. Pairing and helper connections stay on this phone. Pairing identity stays in app-private storage and is excluded from backup.
-
-## Source and build
-
-Repository includes Gradle wrapper, app, host tests, native libraries and dependency licenses. Requires JDK 21, Android SDK 37, build tools 36.0.0 and network for Gradle/Material dependency resolution. Supply the keystore password privately through `PLUS_LENS_KEYSTORE_PASSWORD`, then run `sh build.sh`. Original signing key is excluded; keep it to update original installation. Rebuilding with another key requires uninstalling existing app.
-
-## Verification
-
-Host behavioral and ADB stream regression tests pass; signed release build passes. Phone tested flashlight, three-state sound cycle and native feedback command. Hardware hold timing and felt feedback need user confirmation. Update-check policy tests pass; full future-version installation remains untested. Automatic-startup permission granted and Helper ready observed with Wireless debugging off; repeated restart and reboot recovery remain unverified. No reboot or long-term battery validation performed.
+Successful custom actions give brief haptic feedback. Plus Key observes native button events, and OnePlus can still act on them. Accessible static app shortcuts are available in the picker.
 
 ## Compatibility
 
-Developed and tested on OnePlus 15 (CPH2747), Android 17 / OxygenOS 17. This is an early release; other phones and firmware versions are unverified. Raw key detection depends on OnePlus input events and native button setting names. App installs on Android 11+, which does not imply every firmware is supported.
+Tested on OnePlus 15 (CPH2747) running Android 17 and OxygenOS 17. Requires Android 11 or later to install. Other devices and firmware versions are unverified. Screen-off operation depends on whether the firmware delivers Plus Key events during standby.
 
-When double and triple press are off, short press fires on release. If either is configured, each release gives you 200 ms by default to start the next press. Adjust Click interval from 100 to 500 ms in the app. Longer intervals delay single- and double-press actions. Triple press fires on the third release. Choose Managed by OnePlus for native long press; otherwise set native assignment to Do nothing.
+## Updates and privacy
 
-Flashlight, sound, media, volume, and lock actions can run while locked. On Android 16 or later, apps, shortcuts, and other actions can wake the screen and run once you unlock within 30 seconds, provided the firmware delivers the required unlock callbacks. A newer custom press replaces any pending action. Screen-off operation depends on the phone delivering Plus Key events during standby.
+Plus Key checks GitHub for updates once daily when opened. Go to **Settings → More options** to check manually or turn off automatic checks. Before handing an update to Android’s installer, Plus Key verifies the APK checksum, package name, version code, and signing certificate. Android requires your approval to install it.
 
-## USB startup fallback
+No account or analytics. Pairing and helper connections stay on your phone. The pairing identity is stored privately and excluded from backup.
 
-If local pairing cannot start helper, install APK and open app once, enable USB debugging and authorize computer. From directory containing APK, run:
+## Build and release
 
-```sh
-adb install -r PlusKey-1.5.1.apk
-adb push PlusKey-1.5.1.apk /data/local/tmp/plus-lens-helper.apk
-adb shell chmod 444 /data/local/tmp/plus-lens-helper.apk
-adb shell cmd package list packages -U io.hiddemoens.pluskey
-```
+Requires JDK 21, Android SDK 37, and Build Tools 36.0.0. Supply the keystore password privately through `PLUS_LENS_KEYSTORE_PASSWORD`, then run `sh build.sh` to run host tests and build a signed APK. Use the same signing key to update an existing installation.
 
-Use UID printed by last command in place of APP_UID:
-
-```sh
-adb shell 'CLASSPATH=/data/local/tmp/plus-lens-helper.apk setsid nohup app_process / io.hiddemoens.pluskey.Helper APP_UID </dev/null >/data/local/tmp/plus-lens.log 2>&1 &'
-```
-
-Use app Stop button before replacing an already-running helper. After startup, USB can disconnect.
+For public releases, increment Android’s `versionCode`, use a numeric tag such as `v1.5.1`, and attach one signed APK with a GitHub SHA-256 asset digest. Publish a regular GitHub release so the app can offer the update.
 
 ## License
 
-Original code: [Apache License 2.0](LICENSE). Bundled dependencies use their own licenses; see [THIRD_PARTY.md](THIRD_PARTY.md). Not affiliated with OnePlus.
-
-## Updates
-
-App checks latest public GitHub release once daily when opened. Settings → More options → Check for updates checks immediately. Automatic checks can be turned off there. Download requires a tap; APK checksum, package name, version code and signing certificate are verified before Android installer opens. Android asks to allow installs from Plus Key once and confirms each installation. Updates cannot install silently.
-
-Maintainers: use an increasing Android versionCode and numeric release tag (for example v1.5 or v1.4.1); upload one signed APK to a normal published GitHub Release. Keep original signing key private and reuse it. GitHub asset SHA-256 digest is required. Draft and pre-release builds are not offered by updater.
+[Apache License 2.0](LICENSE). Bundled dependency licenses are listed in [THIRD_PARTY.md](THIRD_PARTY.md). PlusKey is independent of OnePlus.
