@@ -23,13 +23,16 @@ import rikka.shizuku.Shizuku;
 
 public final class MainActivity extends AppCompatActivity {
     private static final long STATUS_CHECK_MS = 2_000;
+    private static final String LONG_PRESS_DEFAULT_SET = "long_press_default_set";
+    private static final String LONG_PRESS_SETUP_HINT = "Set the OnePlus action to Do nothing to let Plus Key handle long press and remove the ‘Press and hold…’ warning.";
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private Mailbox mailbox;private WirelessController wireless;private SetupSheet setup;
     private final TextView[] pressNames = new TextView[KeyPress.TRIPLE + 1];
     private final ImageView[] pressIcons = new ImageView[KeyPress.TRIPLE + 1];
     private final MaterialButton[] pressPreviews = new MaterialButton[KeyPress.TRIPLE + 1];
-    private TextView longNote,status,detail;
+    private View longPressSetupCard;
+    private TextView status,detail;
     private MaterialButton start,stop,finishSetup;private LinearProgressIndicator progress;
     private boolean resumed,autoAttempt,shizukuAttempt;
     private final Shizuku.OnRequestPermissionResultListener shizukuPermission = (code, result) -> {
@@ -57,9 +60,11 @@ public final class MainActivity extends AppCompatActivity {
     };
     protected void onCreate(Bundle saved){
         DynamicColors.applyToActivityIfAvailable(this);super.onCreate(saved);
-        updates=new Updates(this);mailbox=new Mailbox(getExternalFilesDir(null));wireless=WirelessController.get(this);setup=new SetupSheet(this,wireless);
+        File mailboxDir = getExternalFilesDir(null);
+        updates=new Updates(this);mailbox=new Mailbox(mailboxDir);wireless=WirelessController.get(this);setup=new SetupSheet(this,wireless);
         Shizuku.addRequestPermissionResultListener(shizukuPermission);
         try{if(mailbox.selected(KeyPress.SHORT)==null && getPackageManager().getLaunchIntentForPackage("com.google.ar.lens")!=null)mailbox.select(KeyPress.SHORT, Helper.LENS);}catch(Exception ignored){}
+        if (mailboxDir != null) initializeLongPressDefault();
         LinearLayout root=Ui.column(this);root.setPadding(dp(20),dp(12),dp(20),dp(28));
         LinearLayout top=Ui.actions(this,root);
         TextView title=new TextView(this);title.setText("Plus Key");title.setTextSize(36);title.setTypeface(null,Typeface.BOLD);title.setTextColor(Ui.color(this,com.google.android.material.R.attr.colorOnSurface));top.addView(title,new LinearLayout.LayoutParams(0,-2,1));
@@ -70,6 +75,12 @@ public final class MainActivity extends AppCompatActivity {
         addPressCard(root, KeyPress.TRIPLE, "Triple press", "Off");
         Ui.button(this, root, clickIntervalLabel(), false, v -> showClickInterval((MaterialButton) v));
         addPressCard(root, KeyPress.LONG, "Long press", "Managed by OnePlus");
+        LinearLayout longPressSetup = Ui.card(this, root);
+        longPressSetupCard = (View) longPressSetup.getParent();
+        longPressSetupCard.setVisibility(View.GONE);
+        Ui.text(this, longPressSetup, "Turn off OnePlus action", 22, false);
+        Ui.text(this, longPressSetup, LONG_PRESS_SETUP_HINT, 14, true);
+        Ui.button(this, longPressSetup, "Open OnePlus settings", true, v -> onePlusSettings());
         LinearLayout connection=Ui.card(this,root);status=Ui.text(this,connection,"Checking…",24,false);detail=Ui.text(this,connection,"",14,true);
         progress=new LinearProgressIndicator(this);progress.setIndeterminate(true);progress.setVisibility(View.GONE);connection.addView(progress,new LinearLayout.LayoutParams(-1,dp(6)));
         start=Ui.button(this,connection,"Start",true,v->startHelper());
@@ -78,6 +89,23 @@ public final class MainActivity extends AppCompatActivity {
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(Ui.color(this,com.google.android.material.R.attr.colorSurface));scroll.addView(root);
         scroll.setOnApplyWindowInsetsListener((view,insets)->{android.graphics.Insets bars=insets.getInsets(WindowInsets.Type.systemBars());view.setPadding(0,bars.top,0,bars.bottom);return insets;});
         setContentView(scroll);showSelections();
+    }
+    private void initializeLongPressDefault() {
+        SharedPreferences prefs = wireless.prefs();
+        if (prefs.getBoolean(LONG_PRESS_DEFAULT_SET, false)) return;
+        try {
+            PackageManager packages = getPackageManager();
+            PackageInfo installed = packages.getPackageInfo(getPackageName(), 0);
+            // An absent long-press target on an upgrade can be an intentional OnePlus choice.
+            if (installed.firstInstallTime == installed.lastUpdateTime
+                && packages.hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH)
+                && mailbox.selected(KeyPress.LONG) == null) {
+                mailbox.select(KeyPress.LONG, "action:torch");
+            }
+            prefs.edit().putBoolean(LONG_PRESS_DEFAULT_SET, true).apply();
+        } catch (PackageManager.NameNotFoundException | IOException error) {
+            android.util.Log.w("PlusKey", "Could not initialize long press", error);
+        }
     }
     private String clickIntervalLabel() {
         return "Click interval · " + mailbox.clickInterval() + " ms";
@@ -120,7 +148,6 @@ public final class MainActivity extends AppCompatActivity {
         TextView label=new TextView(this);label.setTextSize(23);label.setTextColor(Ui.color(this,com.google.android.material.R.attr.colorOnSurface));label.setPadding(dp(14),0,0,0);row.addView(label,new LinearLayout.LayoutParams(0,-2,1));card.addView(row);
         pressNames[gesture] = label;
         pressIcons[gesture] = icon;
-        if (gesture == KeyPress.LONG) longNote = Ui.text(this, card, "Set OnePlus action to Do nothing to use this.", 14, true);
         LinearLayout actions = Ui.actions(this, card);
         Ui.button(this, actions, "Choose", true, v -> choose(gesture, title, unsetLabel));
         pressPreviews[gesture] = Ui.button(this, actions, "Preview", false, v -> preview(gesture));
@@ -130,8 +157,6 @@ public final class MainActivity extends AppCompatActivity {
         try{
             mailbox.select(gesture, choice.target);
             if(choice.target!=null)Targets.remember(this,choice);showSelections();
-            if(gesture == KeyPress.LONG && choice.target!=null && !"nothing".equals(systemAction()))new MaterialAlertDialogBuilder(this).setTitle("Turn off OnePlus action")
-                .setMessage("Set OnePlus button action to Do nothing so your chosen long-press action can run.").setPositiveButton("Open settings",(d,w)->onePlusSettings()).setNegativeButton("Later",null).show();
         }catch(Exception error){toast("Could not save. Choose another action.");}
     }).show(title, unsetLabel);}
     private String systemAction(){try{return Settings.System.getString(getContentResolver(),Helper.ONEPLUS_ACTION_SETTING);}catch(Exception error){return null;}}
@@ -142,11 +167,14 @@ public final class MainActivity extends AppCompatActivity {
                 showSelection(gesture, target);
                 MaterialButton preview = pressPreviews[gesture];
                 if (gesture == KeyPress.LONG) {
-                    boolean blocked = target != null && !"nothing".equals(systemAction());
-                    boolean customReady = target != null && !blocked;
-                    preview.setText(customReady ? "Preview" : "Plus Key settings");
-                    preview.setOnClickListener(v -> {if (customReady) preview(KeyPress.LONG); else onePlusSettings();});
-                    longNote.setVisibility(blocked ? View.VISIBLE : View.GONE);
+                    String nativeAction = systemAction();
+                    boolean blocked = target != null && !"nothing".equals(nativeAction);
+                    boolean showSetup = blocked && nativeAction != null && !nativeAction.isEmpty();
+                    boolean openSettings = target == null || (blocked && !showSetup);
+                    preview.setText(openSettings ? "Plus Key settings" : "Preview");
+                    preview.setEnabled(!showSetup);
+                    preview.setOnClickListener(v -> {if (openSettings) onePlusSettings(); else preview(KeyPress.LONG);});
+                    longPressSetupCard.setVisibility(showSetup ? View.VISIBLE : View.GONE);
                 } else {
                     preview.setEnabled(target != null);
                 }
@@ -254,7 +282,11 @@ public final class MainActivity extends AppCompatActivity {
             setTextIfChanged(detail, current.split("\\|", 3)[2]);
         } else {
             setTextIfChanged(status, configured ? "Not running" : "Setup needed");
-            setTextIfChanged(detail, wireless.message.isEmpty() ? "Finish setup to use your button." : wireless.message);
+            String message = wireless.message;
+            if (!message.startsWith("Setup needed:")) {
+                message = configured ? "Tap Start to reconnect your button." : "Finish setup to use your button.";
+            }
+            setTextIfChanged(detail, message);
         }
     }
     private static void setTextIfChanged(TextView view, String value) {

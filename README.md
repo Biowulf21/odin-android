@@ -1,6 +1,6 @@
 # PlusKey
 
-Choose separate actions, apps, or public app shortcuts for short, double, triple, and long presses. Double and triple press are off by default. Custom long press fires once after 500 ms while held. Successful custom actions give brief native haptic feedback. Keep long press Managed by OnePlus to retain phone's native assignment. For custom long press, set OnePlus assignment to Do nothing using app's settings link.
+Choose separate actions, apps, or public app shortcuts for short, double, triple, and long presses. Double and triple press are off by default. On fresh installs with a flash, Plus Key defaults long press to Toggle flashlight. Custom long press fires once after 500 ms while held. Successful custom actions give brief native haptic feedback. Choose Managed by OnePlus to use the phone's native assignment. For custom long press, set the OnePlus assignment to Do nothing using the app's settings link. This also removes the “Press and hold…” warning.
 
 Built-in actions include flashlight, Sound → Vibrate → Silent, two-state sound toggles, individual sound modes, screenshot, lock, notifications, quick settings, media and volume controls.
 
@@ -12,7 +12,7 @@ Plus Key prefers [Shizuku](https://shizuku.rikka.app/) 13 or later when it’s r
 
 After pairing, Start uses saved local connection. Optional automatic startup requests one protected-settings permission so app can enable Wireless debugging for startup and disable it when ready. On this OnePlus firmware, permission grant is blocked until Developer options → Disable system optimisation is enabled. This native setting may increase background power usage. Manual startup remains available.
 
-APK stays installed across reboot. Helper may need restarting after reboot or system termination. Open app to restart; automatic startup means automatic connection management during startup, not guaranteed unattended boot recovery. Android may still require approval for each new Wi-Fi network.
+APK stays installed across reboot. Helper may need restarting after reboot or system termination. Open Plus Key and tap Start if the button is disconnected. Automatic startup manages the connection while the app starts the helper. Android may still require approval for each new Wi-Fi network.
 
 ## Behavior and privacy
 
@@ -39,8 +39,8 @@ Flashlight, sound, media, volume, and lock actions can run while locked. On Andr
 If local pairing cannot start helper, install APK and open app once, enable USB debugging and authorize computer. From directory containing APK, run:
 
 ```sh
-adb install -r PlusKey-1.5.apk
-adb push PlusKey-1.5.apk /data/local/tmp/plus-lens-helper.apk
+adb install -r PlusKey-1.5.1.apk
+adb push PlusKey-1.5.1.apk /data/local/tmp/plus-lens-helper.apk
 adb shell chmod 444 /data/local/tmp/plus-lens-helper.apk
 adb shell cmd package list packages -U io.hiddemoens.pluskey
 ```

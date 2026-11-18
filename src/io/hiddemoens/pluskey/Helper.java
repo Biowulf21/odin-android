@@ -11,7 +11,7 @@ import java.util.concurrent.*;
 /** Runs through app_process with the identity authorized by ADB or Shizuku. */
 public final class Helper {
     static final String SOCKET = "io.hiddemoens.pluskey.helper.v1";
-    static final String VERSION = "1.5";
+    static final String VERSION = "1.5.1";
     static final String ONEPLUS_ACTION_SETTING = "oplus_action_button_switch_state";
     static final String LENS = "com.google.ar.lens/com.google.vr.apps.ornament.app.lens.LensLauncherActivity";
     private static final long UNLOCK_TIMEOUT_MS = 30_000;
