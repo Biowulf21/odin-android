@@ -2,6 +2,8 @@
 
 [![Download APK](https://img.shields.io/badge/Download-APK-2EA44F?style=for-the-badge&logo=github)](https://github.com/hiddemoens/PlusKey/releases/latest)
 
+**Moving from v1.7 or earlier?** [Download v1.8 directly](https://github.com/hiddemoens/PlusKey/releases/download/v1.8/PlusKey-1.8.apk), install it, and complete setup again. Once the new app handles your button, uninstall the previous version.
+
 Customize the OnePlus Plus Key with separate actions, apps, or app shortcuts for single, double, triple, and long presses. Built-in actions include flashlight, sound modes, screenshot, screen lock, notifications, quick settings, media, and volume.
 
 <p align="center">
