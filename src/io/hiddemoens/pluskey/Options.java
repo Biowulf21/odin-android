@@ -1,0 +1,37 @@
+package io.hiddemoens.pluskey;
+final class Options {
+    static int ringerMode(String action,int current){
+        switch(action){
+            case "action:sound_cycle":return current==2?1:current==1?0:2;
+            case "action:vibrate_toggle":return current==1?2:1;
+            case "action:silent_toggle":return current==0?2:0;
+            case "action:silent":return 0;case "action:vibrate":return 1;case "action:ring":return 2;
+            default:return -1;
+        }
+    }
+    static final String[] ACTIONS={"action:torch","action:sound_cycle","action:vibrate_toggle","action:silent_toggle","action:silent","action:vibrate","action:ring","action:screenshot","action:lock","action:notifications","action:quick_settings","action:media_toggle","action:media_next","action:media_previous","action:volume_up","action:volume_down"};
+    static boolean validTarget(String value) {
+        if(validComponent(value))return true;
+        if(value==null)return false;
+        for(String action:ACTIONS)if(action.equals(value))return true;
+        if(!value.startsWith("shortcut:")||value.length()>32768)return false;
+        int split=value.indexOf(':',9);
+        if(split<0||!validComponent(value.substring(9,split)+"/.Shortcut"))return false;
+        try{
+            String decoded=new String(java.util.Base64.getUrlDecoder().decode(value.substring(split+1)),java.nio.charset.StandardCharsets.UTF_8);
+            String[] intents=decoded.split("\u0000",-1);
+            if(intents.length==0||intents.length>8)return false;
+            for(String intent:intents)if(!(intent.startsWith("intent:")||intent.startsWith("#Intent;"))||!intent.contains("#Intent;")||!intent.endsWith(";end"))return false;
+            return true;
+        }catch(IllegalArgumentException error){return false;}
+    }
+    static boolean validComponent(String value) {
+        return value != null && value.length() <= 500 && value.matches("[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)+/\\.?[A-Za-z_$][A-Za-z0-9_$]*(?:\\.[A-Za-z_$][A-Za-z0-9_$]*)*");
+    }
+    static int port(String value) {
+        if (value == null || !value.matches("[0-9]{1,5}")) return -1;
+        int port = Integer.parseInt(value);
+        return port > 0 && port <= 65535 ? port : -1;
+    }
+    static boolean validCode(String value) { return value != null && value.matches("[0-9]{6}"); }
+}

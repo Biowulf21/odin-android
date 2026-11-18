@@ -1,0 +1,60 @@
+# PlusKey
+
+Choose separate short and long press actions, apps, or public app shortcuts. Short press fires on release; custom long press fires once after 500 ms while held. Successful custom actions give brief native haptic feedback. Keep long press Managed by OnePlus to retain phone's native assignment. For custom long press, set OnePlus assignment to Do nothing using app's settings link.
+
+Built-in actions include flashlight, Sound → Vibrate → Silent, two-state sound toggles, individual sound modes, screenshot, lock, notifications, quick settings, media and volume controls.
+
+## Install and setup
+
+Download [PlusKey-1.3.apk](https://github.com/hiddemoens/PlusKey/releases/download/v1.3/PlusKey-1.3.apk) from [Releases](https://github.com/hiddemoens/PlusKey/releases). Install APK, then open Plus Key. Existing personal builds update without losing choices. Open Settings in Plus Key for guided setup. Already-completed steps hide automatically. Pair with code opens Android settings and notification for six-digit code; no port entry needed. Keep Android pairing window open while entering code through notification. Notification closes after submission.
+
+After pairing, Start uses saved local connection. Optional automatic startup requests one protected-settings permission so app can enable Wireless debugging for startup and disable it when ready. On this OnePlus firmware, permission grant is blocked until Developer options → Disable system optimisation is enabled. This native setting may increase background power usage. Manual startup remains available.
+
+APK stays installed across reboot. Helper may need restarting after reboot or system termination. Open app to restart; automatic startup means automatic connection management during startup, not guaranteed unattended boot recovery. Android may still require approval for each new Wi-Fi network.
+
+## Behavior and privacy
+
+Actions require awake, unlocked phone. Native button events are observed, not suppressed. Published static app shortcuts are offered when accessible; private or dynamic launcher shortcuts may not appear. No account or analytics. Optional automatic update checks contact GitHub once daily when app opens; disable them in Settings → More options. Pairing and helper connections stay on this phone. Pairing identity stays in app-private storage and is excluded from backup.
+
+## Source and build
+
+Repository includes Gradle wrapper, app, host tests, native libraries and dependency licenses. Requires JDK 21, Android SDK 37, build tools 36.0.0 and network for Gradle/Material dependency resolution. Run sh build.sh. Original signing key is excluded; keep it to update original installation. Rebuilding with another key requires uninstalling existing app. 
+
+## Verification
+
+Host behavioral and ADB stream regression tests pass; signed release build passes. Phone tested flashlight, three-state sound cycle and native feedback command. Hardware hold timing and felt feedback need user confirmation. Automatic debugging toggle remains unverified while phone blocks permission grant. No reboot or long-term battery validation performed.
+
+## Compatibility
+
+Developed and tested on OnePlus 15 (CPH2747), Android 17 / OxygenOS 17. This is an early release; other phones and firmware versions are unverified. Raw key detection depends on OnePlus input events and native button setting names. App installs on Android 11+, which does not imply every firmware is supported.
+
+Long-press threshold is 500 ms. Short press launches selected app on release. Custom actions work only while awake and unlocked. Choose Managed by OnePlus for native long press; otherwise set native assignment to Do nothing.
+
+## USB startup fallback
+
+If local pairing cannot start helper, install APK and open app once, enable USB debugging and authorize computer. From directory containing APK, run:
+
+```sh
+adb install -r PlusKey-1.3.apk
+adb push PlusKey-1.3.apk /data/local/tmp/plus-lens-helper.apk
+adb shell chmod 444 /data/local/tmp/plus-lens-helper.apk
+adb shell cmd package list packages -U io.hiddemoens.pluskey
+```
+
+Use UID printed by last command in place of APP_UID:
+
+```sh
+adb shell 'CLASSPATH=/data/local/tmp/plus-lens-helper.apk setsid nohup app_process / io.hiddemoens.pluskey.Helper APP_UID </dev/null >/data/local/tmp/plus-lens.log 2>&1 &'
+```
+
+Use app Stop button before replacing an already-running helper. After startup, USB can disconnect.
+
+## License
+
+Original code: [Apache License 2.0](LICENSE). Bundled dependencies use their own licenses; see [THIRD_PARTY.md](THIRD_PARTY.md). Not affiliated with OnePlus.
+
+## Updates
+
+App checks latest public GitHub release once daily when opened. Settings → More options → Check for updates checks immediately. Automatic checks can be turned off there. Download requires a tap; APK checksum, package name, version code and signing certificate are verified before Android installer opens. Android asks to allow installs from Plus Key once and confirms each installation. Updates cannot install silently.
+
+Maintainers: use an increasing Android versionCode and numeric release tag (for example v1.4 or v1.3.1); upload one signed APK to a normal published GitHub Release. Keep original signing key private and reuse it. GitHub asset SHA-256 digest is required. Draft and pre-release builds are not offered by updater.
