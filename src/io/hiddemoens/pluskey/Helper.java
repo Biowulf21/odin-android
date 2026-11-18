@@ -228,6 +228,9 @@ public final class Helper {
             if (target == null) throw new IOException("No app selected; open Plus Key and choose an app");
             if (!preview && pendingUnlock != null) pendingUnlock.finish();
             if ((!preview && Policy.mayRunWhileLocked(target)) || isAwakeAndUnlocked()) {
+                if (!preview && Policy.shouldWakeScreen(target)) {
+                    command("/system/bin/input", "keyevent", "KEYCODE_WAKEUP");
+                }
                 runTarget(target);
             } else if (preview) {
                 last = "Skipped preview: phone locked, asleep, or state unavailable";

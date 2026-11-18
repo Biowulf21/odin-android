@@ -10,8 +10,18 @@ final class Options {
         }
     }
     static final String[] ACTIONS={"action:torch","action:sound_cycle","action:vibrate_toggle","action:silent_toggle","action:silent","action:vibrate","action:ring","action:screenshot","action:lock","action:notifications","action:quick_settings","action:media_toggle","action:media_next","action:media_previous","action:volume_up","action:volume_down"};
+    static final String LOCKED_ACTIVITY = "locked-activity:";
+    static boolean isLockedActivity(String target) {
+        return target != null && target.startsWith(LOCKED_ACTIVITY)
+            && validComponent(target.substring(LOCKED_ACTIVITY.length()));
+    }
+    static final String SECURE_CAMERA = "secure-camera:";
+    static boolean isSecureCamera(String target) {
+        return target != null && target.startsWith(SECURE_CAMERA)
+            && validComponent(target.substring(SECURE_CAMERA.length()) + "/.Camera");
+    }
     static boolean validTarget(String value) {
-        if(validComponent(value))return true;
+        if(validComponent(value) || isSecureCamera(value) || isLockedActivity(value))return true;
         if(value==null)return false;
         for(String action:ACTIONS)if(action.equals(value))return true;
         if(!value.startsWith("shortcut:")||value.length()>32768)return false;

@@ -41,6 +41,9 @@ final class ChoicePicker {
     private final List<Entry> actions = new ArrayList<>();
     private final LruCache<String, Drawable> icons = new LruCache<>(32);
     private List<Entry> apps;
+    private Set<String> secureCameras = Collections.emptySet();
+    private Map<String, List<Targets.Choice>> lockedApps = Collections.emptyMap();
+    private TextView legend;
     private BottomSheetDialog sheet;
     private EditText search;
     private ListView list;
@@ -103,6 +106,11 @@ final class ChoicePicker {
         segment.topMargin = dp(6);
         segment.bottomMargin = dp(12);
         body.addView(tabs, segment);
+        legend = Ui.text(context, body, "Offers an action you can use while locked", 14, false);
+        Drawable lock = context.getDrawable(R.drawable.ic_locked_action).mutate();
+        lock.setTint(accent);
+        legend.setCompoundDrawablesRelativeWithIntrinsicBounds(lock, null, null, null);
+        legend.setCompoundDrawablePadding(dp(8));
         search = new EditText(context);
         search.setSingleLine();
         search.setHint("Search apps");
@@ -118,6 +126,8 @@ final class ChoicePicker {
         field.bottomMargin = dp(10);
         body.addView(search, field);
         list = new ListView(context);
+        list.setNestedScrollingEnabled(true);
+        sheet.getBehavior().setDraggableOnNestedScroll(false);
         list.setBackground(rounded(surface, 20));
         list.setClipToOutline(true);
         list.setDivider(null);
@@ -156,15 +166,27 @@ final class ChoicePicker {
         new Thread(() -> {
             List<Entry> found = new ArrayList<>();
             PackageManager pm = context.getPackageManager();
+            Map<String, List<Targets.Choice>> locked = new HashMap<>();
+            Set<String> cameras = new HashSet<>();
+            Intent secure = new Intent(android.provider.MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA_SECURE);
+            for (ResolveInfo handler : pm.queryIntentActivities(secure, PackageManager.MATCH_DEFAULT_ONLY)) {
+                if (handler.activityInfo.exported && (handler.activityInfo.permission == null ||
+                    context.checkSelfPermission(handler.activityInfo.permission) == PackageManager.PERMISSION_GRANTED))
+                    cameras.add(handler.activityInfo.packageName);
+            }
             for (ResolveInfo app : pm.queryIntentActivities(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)) {
                 if (!app.activityInfo.exported || context.getPackageName().equals(app.activityInfo.packageName)) continue;
                 String target = new ComponentName(app.activityInfo.packageName, app.activityInfo.name).flattenToString();
+                locked.computeIfAbsent(app.activityInfo.packageName, owner -> Targets.lockedActivities(context, owner));
                 found.add(new Entry(new Targets.Choice(app.loadLabel(pm).toString(), target), app));
             }
             Collator collator = Collator.getInstance();
             found.sort((a, b) -> collator.compare(a.choice.label, b.choice.label));
             context.getMainExecutor().execute(() -> {
                 if (!sheet.isShowing()) return;
+                locked.values().removeIf(List::isEmpty);
+                lockedApps = locked;
+                secureCameras = cameras;
                 apps = found;
                 loading = false;
                 refresh();
@@ -174,6 +196,7 @@ final class ChoicePicker {
 
     private void refresh() {
         search.setVisibility(browsingApps ? View.VISIBLE : View.GONE);
+        legend.setVisibility(browsingApps && (!secureCameras.isEmpty() || !lockedApps.isEmpty()) ? View.VISIBLE : View.GONE);
         visible.clear();
         if (!browsingApps) visible.addAll(actions);
         else if (apps != null) {
@@ -189,12 +212,18 @@ final class ChoicePicker {
     private void pick(Entry entry) {
         if (entry.app != null) {
             List<Targets.Choice> shortcuts = Targets.shortcuts(context, entry.app);
+            shortcuts.addAll(0, lockedApps.getOrDefault(entry.app.activityInfo.packageName, Collections.emptyList()));
+            if (secureCameras.contains(entry.app.activityInfo.packageName)) {
+                shortcuts.add(0, new Targets.Choice(entry.choice.label + " · Secure camera",
+                    Options.SECURE_CAMERA + entry.app.activityInfo.packageName));
+            }
             if (!shortcuts.isEmpty()) {
                 shortcuts.add(0, entry.choice);
                 String[] labels = new String[shortcuts.size()];
                 int checked = -1;
                 for (int i = 0; i < labels.length; i++) {
                     labels[i] = i == 0 ? "Open app" : shortcuts.get(i).label;
+                    if (Options.isSecureCamera(shortcuts.get(i).target)) labels[i] = "Open secure camera while locked";
                     if (Objects.equals(shortcuts.get(i).target, current)) checked = i;
                 }
                 new com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
@@ -250,6 +279,10 @@ final class ChoicePicker {
                 check.setTextSize(21);
                 check.setTextColor(Ui.color(context, androidx.appcompat.R.attr.colorPrimary));
                 row.addView(check);
+                ImageView lock = new ImageView(context);
+                lock.setImageResource(R.drawable.ic_locked_action);
+                lock.setColorFilter(Ui.color(context, androidx.appcompat.R.attr.colorPrimary));
+                row.addView(lock, new LinearLayout.LayoutParams(dp(24), dp(24)));
             }
             Entry entry = getItem(index);
             ImageView icon = (ImageView) row.getChildAt(0);
@@ -265,8 +298,14 @@ final class ChoicePicker {
                 }
                 icon.setImageDrawable(drawable);
             }
-            ((TextView) row.getChildAt(1)).setText(entry.choice.label);
-            boolean checked = Objects.equals(current, entry.choice.target);
+            boolean supportsLocked = entry.app != null && (secureCameras.contains(entry.app.activityInfo.packageName) || lockedApps.containsKey(entry.app.activityInfo.packageName));
+            TextView label = (TextView) row.getChildAt(1);
+            label.setText(entry.choice.label);
+            row.getChildAt(3).setVisibility(supportsLocked ? View.VISIBLE : View.GONE);
+            label.setContentDescription(supportsLocked ? entry.choice.label + ", supports locked use" : null);
+            boolean checked = Objects.equals(current, entry.choice.target)
+                || (supportsLocked && lockedApps.getOrDefault(entry.app.activityInfo.packageName, Collections.emptyList()).stream().anyMatch(option -> option.target.equals(current)))
+                || (supportsLocked && (Options.SECURE_CAMERA + entry.app.activityInfo.packageName).equals(current));
             row.setBackgroundColor(checked ? 0x18ff902f : android.graphics.Color.TRANSPARENT);
             row.getChildAt(2).setVisibility(checked ? View.VISIBLE : View.INVISIBLE);
             row.setStateDescription(checked ? "Selected" : null);

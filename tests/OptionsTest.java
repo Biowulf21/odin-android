@@ -10,6 +10,13 @@ public final class OptionsTest {
         CoreTest.check(Options.port("37123") == 37123, "port accepted");
         CoreTest.check(Options.port("0") == -1 && Options.port("65536") == -1 && Options.port("x") == -1, "invalid ports rejected");
         CoreTest.check(Options.validCode("012345") && !Options.validCode("12345") && !Options.validCode("1234567"), "six digit code including leading zero");
+        CoreTest.check(Policy.shouldWakeScreen("locked-activity:com.example.app/.Main"), "locked app wakes display");
+        CoreTest.check(!Policy.shouldWakeScreen("action:torch") && !Policy.shouldWakeScreen("com.example.app/.Main"), "other gestures preserve display state");
+        String secureCamera = Options.SECURE_CAMERA + "com.example.camera";
+        CoreTest.check(Policy.shouldWakeScreen(secureCamera), "secure camera wakes display");
+        CoreTest.check(Options.validTarget(secureCamera) && Policy.mayRunWhileLocked(secureCamera), "secure camera allowed while locked");
+        CoreTest.check(!Policy.mayRunWhileLocked("com.example.camera/.Main"), "normal camera launch waits for unlock");
+        CoreTest.check(!Options.validTarget(secureCamera + "/.Main"), "secure camera accepts only package names");
         File dir=Files.createTempDirectory("pluslens-choice-").toFile();
         Mailbox box=new Mailbox(dir);
         box.select(KeyPress.SHORT, "com.example.app/.MainActivity");

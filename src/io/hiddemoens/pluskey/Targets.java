@@ -57,8 +57,51 @@ final class Targets {
         }catch(Exception ignored){}
         return found;
     }
+    static List<Choice> lockedActivities(Context context, String owner) {
+        List<Choice> choices = new ArrayList<>();
+        PackageManager pm = context.getPackageManager();
+        String android = "http://schemas.android.com/apk/res/android";
+        try {
+            Resources resources = pm.getResourcesForApplication(owner);
+            Set<String> declared = new HashSet<>();
+            try (XmlResourceParser xml = resources.getAssets().openXmlResourceParser("AndroidManifest.xml")) {
+                while (xml.next() != XmlPullParser.END_DOCUMENT) {
+                    if (xml.getEventType() != XmlPullParser.START_TAG || !"activity".equals(xml.getName())) continue;
+                    int ref = xml.getAttributeResourceValue(android, "showWhenLocked", 0);
+                    if (!(ref == 0 ? xml.getAttributeBooleanValue(android, "showWhenLocked", false) : resources.getBoolean(ref))) continue;
+                    String name = xml.getAttributeValue(android, "name");
+                    if (name == null) continue;
+                    if (name.startsWith(".")) name = owner + name;
+                    else if (!name.contains(".")) name = owner + "." + name;
+                    declared.add(name);
+                }
+            }
+            if (declared.isEmpty()) return choices;
+            ActivityInfo[] activities = pm.getPackageInfo(owner, PackageManager.GET_ACTIVITIES).activities;
+            if (activities == null) return choices;
+            for (ActivityInfo info : activities) {
+                if (!declared.contains(info.targetActivity == null ? info.name : info.targetActivity)
+                    || !info.exported || info.permission != null || !info.enabled) continue;
+                ComponentName component = new ComponentName(owner, info.name);
+                if (pm.resolveActivity(new Intent().setComponent(component), 0) == null) continue;
+                choices.add(new Choice(info.loadLabel(pm) + " · Open while locked",
+                    Options.LOCKED_ACTIVITY + component.flattenToString()));
+            }
+        } catch (PackageManager.NameNotFoundException | Resources.NotFoundException |
+                 java.io.IOException | org.xmlpull.v1.XmlPullParserException ignored) {}
+        return choices;
+    }
     static Intent[] intents(String target)throws Exception{
         if(!Options.validTarget(target))throw new IllegalArgumentException("Invalid action");
+        if (Options.isLockedActivity(target)) {
+            ComponentName component = ComponentName.unflattenFromString(target.substring(Options.LOCKED_ACTIVITY.length()));
+            return new Intent[]{new Intent(Intent.ACTION_MAIN).setComponent(component).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)};
+        }
+        if (Options.isSecureCamera(target)) {
+            String owner = target.substring(Options.SECURE_CAMERA.length());
+            return new Intent[]{new Intent(android.provider.MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA_SECURE)
+                .setPackage(owner).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)};
+        }
         if(Options.validComponent(target))return new Intent[]{new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setComponent(ComponentName.unflattenFromString(target)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)};
         if(!target.startsWith("shortcut:"))return new Intent[0];
         int split=target.indexOf(':',9);String owner=target.substring(9,split);

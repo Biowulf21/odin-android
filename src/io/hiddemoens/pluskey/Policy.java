@@ -1,6 +1,11 @@
 package io.hiddemoens.pluskey;
 final class Policy {
+    static boolean shouldWakeScreen(String target) {
+        return Options.isSecureCamera(target) || Options.isLockedActivity(target);
+    }
+
     static boolean mayRunWhileLocked(String target) {
+        if (shouldWakeScreen(target)) return true;
         switch (target) {
             case "action:torch":
             case "action:lock":
