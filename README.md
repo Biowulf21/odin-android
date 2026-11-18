@@ -22,7 +22,7 @@ Repository includes Gradle wrapper, app, host tests, native libraries and depend
 
 ## Verification
 
-Host behavioral and ADB stream regression tests pass; signed release build passes. Phone tested flashlight, three-state sound cycle and native feedback command. Hardware hold timing and felt feedback need user confirmation. Automatic debugging toggle remains unverified while phone blocks permission grant. No reboot or long-term battery validation performed.
+Host behavioral and ADB stream regression tests pass; signed release build passes. Phone tested flashlight, three-state sound cycle and native feedback command. Hardware hold timing and felt feedback need user confirmation. Update-check policy tests pass; full future-version installation remains untested. Automatic-startup permission granted and Helper ready observed with Wireless debugging off; repeated restart and reboot recovery remain unverified. No reboot or long-term battery validation performed.
 
 ## Compatibility
 
