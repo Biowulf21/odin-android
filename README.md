@@ -20,7 +20,7 @@ Native button events are observed, not suppressed. Published static app shortcut
 
 ## Source and build
 
-Repository includes Gradle wrapper, app, host tests, native libraries and dependency licenses. Requires JDK 21, Android SDK 37, build tools 36.0.0 and network for Gradle/Material dependency resolution. Run sh build.sh. Original signing key is excluded; keep it to update original installation. Rebuilding with another key requires uninstalling existing app. 
+Repository includes Gradle wrapper, app, host tests, native libraries and dependency licenses. Requires JDK 21, Android SDK 37, build tools 36.0.0 and network for Gradle/Material dependency resolution. Supply the keystore password privately through `PLUS_LENS_KEYSTORE_PASSWORD`, then run `sh build.sh`. Original signing key is excluded; keep it to update original installation. Rebuilding with another key requires uninstalling existing app.
 
 ## Verification
 

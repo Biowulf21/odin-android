@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")"
+: "${PLUS_LENS_KEYSTORE_PASSWORD:?Set PLUS_LENS_KEYSTORE_PASSWORD to your signing keystore password}"
 SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Library/Android/sdk}}"
 export ANDROID_HOME="$SDK"
 TOOLS="$SDK/build-tools/36.0.0"
