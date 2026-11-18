@@ -26,6 +26,16 @@ public final class CoreTest {
         check(!Policy.mayLaunch("showing=false\nscreenState=SCREEN_STATE_OFF\ninteractiveState=INTERACTIVE_STATE_ASLEEP"), "sleep blocked");
         check(!Policy.mayLaunch(""), "unknown policy blocked");
         check(Policy.mayLaunch("  showing=false\n screenState=SCREEN_STATE_ON\n interactiveState=INTERACTIVE_STATE_AWAKE\n"), "unlocked awake allowed");
+        check(Policy.mayRunWhileLocked("action:torch"), "torch can run with screen off");
+        check(Policy.mayRunWhileLocked("action:silent_toggle"), "ringer can change while locked");
+        check(Policy.mayRunWhileLocked("action:media_next"), "media can run with screen off");
+        check(Policy.mayRunWhileLocked("action:volume_down"), "volume can change while locked");
+        check(Policy.mayRunWhileLocked("action:lock"), "screen lock can run immediately");
+        check(!Policy.mayRunWhileLocked("action:screenshot"), "screenshot requires unlock");
+        check(!Policy.mayRunWhileLocked("action:notifications"), "notifications require unlock");
+        check(!Policy.mayRunWhileLocked("action:quick_settings"), "quick settings require unlock");
+        check(!Policy.mayRunWhileLocked("com.example.app/.Main"), "apps require unlock");
+        check(!Policy.mayRunWhileLocked("shortcut:com.example.app:encoded"), "shortcuts require unlock");
         String devices = "add device 1: /dev/input/event5\n name: gpio-keys\n KEY_VOLUMEDOWN\nadd device 2: /dev/input/event9\n name: gpio-keys\n KEY (0001): BTN_TRIGGER_HAPPY32\n";
         check("/dev/input/event9".equals(KeyPress.device(devices)), "discover actual key path");
         check(KeyPress.device("add device 1: /dev/input/event0\nKEY_POWER") == null, "missing key does not pick unrelated device");

@@ -3,17 +3,24 @@ package io.hiddemoens.pluskey;
 import android.net.LocalServerSocket;
 import android.net.LocalSocket;
 import android.net.LocalSocketAddress;
+import android.os.SystemClock;
 import java.io.*;
 import java.util.concurrent.*;
 
 /** Runs as shell through app_process. No ordinary Android service is installed. */
 public final class Helper {
     static final String SOCKET = "io.hiddemoens.pluskey.helper.v1";
-    static final String VERSION = "1.3";
+    static final String VERSION = "1.4";
     static final String LENS = "com.google.ar.lens/com.google.vr.apps.ornament.app.lens.LensLauncherActivity";
+    private static final long UNLOCK_TIMEOUT_MS = 30_000;
+    private static final long UNLOCK_CHECK_INTERVAL_MS = 500;
     private volatile boolean running = true;
-    private final ExecutorService actions=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"PlusKey-actions");t.setDaemon(true);return t;});
-    private void enqueue(boolean longPress){if(running)try{actions.execute(()->{if(running)launch(longPress);});}catch(RejectedExecutionException ignored){}}
+    private final ScheduledThreadPoolExecutor actions = new ScheduledThreadPoolExecutor(1, task -> {
+        Thread thread = new Thread(task, "PlusKey-actions");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private ScheduledFuture<?> unlockCheck;
     private volatile Process readerProcess;
     private volatile String state = "Starting";
     private volatile String last = "No short press yet";
@@ -22,6 +29,19 @@ public final class Helper {
     private int appUid;
     private Thread controlThread;
     private final Mailbox mailbox = new Mailbox(new File("/sdcard/Android/data/io.hiddemoens.pluskey/files"));
+
+    private Helper() {
+        actions.setRemoveOnCancelPolicy(true);
+    }
+
+    private void enqueue(boolean longPress, boolean preview) {
+        if (!running) return;
+        try {
+            actions.execute(() -> {
+                if (running) launch(longPress, preview);
+            });
+        } catch (RejectedExecutionException ignored) { }
+    }
 
     public static void main(String[] args) throws Exception {
         if (android.os.Process.myUid() != 2000 || args.length != 1)
@@ -42,7 +62,8 @@ public final class Helper {
             while (helper.running) {
                 try {
                     if (helper.mailbox.stopRequested()) { helper.stop(); break; }
-                    int preview=helper.mailbox.consumePreview();if(preview!=0)helper.launch(preview==2);
+                    int preview = helper.mailbox.consumePreview();
+                    if (preview != 0) helper.enqueue(preview == 2, true);
                     helper.mailbox.publish(helper.state + "|" + helper.launches + "|" + helper.last, System.currentTimeMillis());
                     Thread.sleep(1000);
                 } catch (Exception e) {
@@ -78,6 +99,7 @@ public final class Helper {
             }
         } finally {
             helper.running = false;
+            helper.actions.shutdownNow();
             Process reader = helper.readerProcess;
             if (reader != null) reader.destroy();
             helper.server.close();
@@ -110,12 +132,12 @@ public final class Helper {
             System.out.println("Listening on " + device);
             KeyPress key = new KeyPress();
             ScheduledExecutorService holdTimer=Executors.newSingleThreadScheduledExecutor(r->{Thread t=new Thread(r,"PlusKey-hold");t.setDaemon(true);return t;});
-            holdTimer.scheduleAtFixedRate(()->{if(running&&key.tick(System.nanoTime()/1e9)==2)enqueue(true);},10,10,TimeUnit.MILLISECONDS);
+            holdTimer.scheduleAtFixedRate(()->{if(running&&key.tick(System.nanoTime()/1e9)==2)enqueue(true, false);},10,10,TimeUnit.MILLISECONDS);
             try (BufferedReader input = new BufferedReader(new InputStreamReader(reader.getInputStream()))) {
                 String line;
                 while (running && (line = input.readLine()) != null) {
                     int gesture=key.gesture(line,System.nanoTime()/1e9);
-                    if(gesture!=0)enqueue(gesture==2);
+                    if(gesture!=0)enqueue(gesture==2, false);
                 }
             }
             finally { holdTimer.shutdownNow(); }
@@ -132,32 +154,100 @@ public final class Helper {
         }
     }
 
-    private synchronized void launch(boolean longPress) {
+    private String selectedTarget(boolean longPress) throws Exception {
+        return longPress ? mailbox.selectedLong() : mailbox.selected();
+    }
+
+    private boolean customLongPressEnabled() throws Exception {
+        return "nothing".equals(command("/system/bin/settings", "get", "system",
+            "oplus_action_button_switch_state").trim());
+    }
+
+    private boolean isAwakeAndUnlocked() throws Exception {
+        return Policy.mayLaunch(command("/system/bin/dumpsys", "window", "policy"));
+    }
+
+    private void launch(boolean longPress, boolean preview) {
         try {
-            String target = longPress ? mailbox.selectedLong() : mailbox.selected();
-            if(longPress && target==null)return;
-            if(longPress && !"nothing".equals(command("/system/bin/settings","get","system","oplus_action_button_switch_state").trim())){
-                last="Long press needs OnePlus action set to Do nothing";return;
-            }
-            // Fail closed rather than launching camera UI behind a locked screen.
-            if (!Policy.mayLaunch(command("/system/bin/dumpsys", "window", "policy"))) {
-                last = "Skipped: phone locked, asleep, or state unavailable";
+            String target = selectedTarget(longPress);
+            if (longPress && target == null) return;
+            if (longPress && !customLongPressEnabled()) {
+                last = "Long press needs OnePlus action set to Do nothing";
                 return;
             }
             if (target == null) throw new IOException("No app selected; open Plus Key and choose an app");
-            if(target.startsWith("action:"))DeviceActions.run(target);
-            else for(android.content.Intent intent:Targets.intents(target)){
-                String result=command("/system/bin/am","start","--user","0",intent.toUri(android.content.Intent.URI_INTENT_SCHEME));
-                if(result.contains("Error")||result.contains("Exception"))throw new IOException(result);
+            if (!preview && unlockCheck != null) {
+                unlockCheck.cancel(false);
+                unlockCheck = null;
             }
-            try{DeviceActions.feedback();}catch(Exception vibrationError){System.err.println("Feedback unavailable: "+vibrationError.getClass().getSimpleName());}
-            launches++;
-            last = "Action completed";
-            System.out.println(last + " (" + launches + ")");
+            if ((!preview && Policy.mayRunWhileLocked(target)) || isAwakeAndUnlocked()) {
+                runTarget(target);
+            } else if (preview) {
+                last = "Skipped preview: phone locked, asleep, or state unavailable";
+            } else {
+                command("/system/bin/input", "keyevent", "KEYCODE_WAKEUP");
+                last = "Waiting for unlock";
+                scheduleUnlockCheck(target, longPress, SystemClock.elapsedRealtime() + UNLOCK_TIMEOUT_MS);
+            }
         } catch (Exception e) {
-            last = "Launch failed: " + clean(e.getMessage());
-            System.err.println(last);
+            recordLaunchFailure(e);
         }
+    }
+
+    private void scheduleUnlockCheck(String target, boolean longPress, long deadline) {
+        unlockCheck = actions.schedule(() -> checkForUnlock(target, longPress, deadline),
+            UNLOCK_CHECK_INTERVAL_MS, TimeUnit.MILLISECONDS);
+    }
+
+    private void checkForUnlock(String target, boolean longPress, long deadline) {
+        unlockCheck = null;
+        if (!running) return;
+        try {
+            if (SystemClock.elapsedRealtime() >= deadline) {
+                last = "Skipped: unlock timed out";
+                return;
+            }
+            if (!target.equals(selectedTarget(longPress))) {
+                last = "Skipped: action changed while waiting for unlock";
+                return;
+            }
+            if (!isAwakeAndUnlocked()) {
+                scheduleUnlockCheck(target, longPress, deadline);
+                return;
+            }
+            if (longPress && !customLongPressEnabled()) {
+                last = "Long press needs OnePlus action set to Do nothing";
+                return;
+            }
+            if (SystemClock.elapsedRealtime() >= deadline) {
+                last = "Skipped: unlock timed out";
+                return;
+            }
+            runTarget(target);
+        } catch (Exception e) {
+            recordLaunchFailure(e);
+        }
+    }
+
+    private void runTarget(String target) throws Exception {
+        if (!running) return;
+        if (target.startsWith("action:")) DeviceActions.run(target);
+        else for (android.content.Intent intent : Targets.intents(target)) {
+            String result = command("/system/bin/am", "start", "--user", "0",
+                intent.toUri(android.content.Intent.URI_INTENT_SCHEME));
+            if (result.contains("Error") || result.contains("Exception")) throw new IOException(result);
+        }
+        try { DeviceActions.feedback(); }
+        catch (Exception e) { System.err.println("Feedback unavailable: " + e.getClass().getSimpleName()); }
+        launches++;
+        last = "Action completed";
+        System.out.println(last + " (" + launches + ")");
+    }
+
+    private void recordLaunchFailure(Exception error) {
+        if (!running) return;
+        last = "Launch failed: " + clean(error.getMessage());
+        System.err.println(last);
     }
 
     static String command(String... args) throws Exception {
