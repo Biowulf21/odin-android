@@ -1,5 +1,12 @@
 <resources>
-    <style name="Theme.PlusKey" parent="Theme.Material3Expressive.DayNight.NoActionBar">
+    <style name="Theme.PlusKey" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">#FF902F</item>
+        <item name="colorOnPrimary">#241407</item>
+        <item name="colorSecondaryContainer">#40342B</item>
+        <item name="colorOnSecondaryContainer">#FFDBBC</item>
+        <item name="colorSurface">#171616</item>
+        <item name="colorSurfaceContainer">#292726</item>
+        <item name="android:windowBackground">#171616</item>
         <item name="android:fontFamily">sans</item>
         <item name="android:windowLightStatusBar">?attr/isLightTheme</item>
     </style>

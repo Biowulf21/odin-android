@@ -1,61 +1,284 @@
 package io.hiddemoens.pluskey;
-import android.content.*;
-import android.content.pm.*;
-import android.text.*;
-import android.view.*;
+
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.InsetDrawable;
+import android.graphics.Typeface;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.util.LruCache;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
 import android.widget.*;
-import androidx.appcompat.app.AlertDialog;
-import com.google.android.material.dialog.MaterialAlertDialogBuilder;
-import com.google.android.material.textfield.*;
+import com.google.android.material.bottomsheet.BottomSheetDialog;
+import com.google.android.material.tabs.TabLayout;
+import java.text.Collator;
 import java.util.*;
 
 final class ChoicePicker {
-    interface Selected{void select(Targets.Choice choice);}
-    private final Context context;private final Selected selected;
-    ChoicePicker(Context context,Selected selected){this.context=context;this.selected=selected;}
-    void show(String title, String unsetLabel){
-        ArrayList<String> labels = new ArrayList<>();
-        if (unsetLabel != null) labels.add(unsetLabel);
-        labels.add("Action");
-        labels.add("App");
-        new MaterialAlertDialogBuilder(context).setTitle(title).setItems(labels.toArray(new String[0]), (d, index) -> {
-            String choice = labels.get(index);
-            if (choice.equals("App")) apps();
-            else if (choice.equals("Action")) actions();
-            else selected.select(new Targets.Choice(unsetLabel, null));
-        }).setNegativeButton("Cancel", null).show();
+    interface Selected { void select(Targets.Choice choice); }
+
+    private static final class Entry {
+        final Targets.Choice choice;
+        final ResolveInfo app;
+        final String searchName;
+        Entry(Targets.Choice choice, ResolveInfo app) {
+            this.choice = choice;
+            this.app = app;
+            this.searchName = choice.label.toLowerCase(Locale.ROOT);
+        }
     }
-    private void actions(){
-        ArrayList<Targets.Choice> choices=new ArrayList<>();
-        for(int i=0;i<Targets.ACTIONS.length;i++)if(i!=0||context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH))choices.add(new Targets.Choice(Targets.LABELS[i],Targets.ACTIONS[i]));
-        String[] labels=choices.stream().map(c->c.label).toArray(String[]::new);
-        new MaterialAlertDialogBuilder(context).setTitle("Choose action").setItems(labels,(d,index)->selected.select(choices.get(index))).setNegativeButton("Cancel",null).show();
+
+    private final Context context;
+    private final Selected selected;
+    private final List<Entry> visible = new ArrayList<>();
+    private final List<Entry> actions = new ArrayList<>();
+    private final LruCache<String, Drawable> icons = new LruCache<>(32);
+    private List<Entry> apps;
+    private BottomSheetDialog sheet;
+    private EditText search;
+    private ListView list;
+    private TextView empty;
+    private String current;
+    private boolean browsingApps, loading;
+    private final Rows rows = new Rows();
+
+    ChoicePicker(Context context, Selected selected) {
+        this.context = context;
+        this.selected = selected;
     }
-    private void apps(){
-        List<ResolveInfo> installed=context.getPackageManager().queryIntentActivities(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER),0);
-        installed.removeIf(info->info.activityInfo.packageName.equals(context.getPackageName())||!info.activityInfo.exported);
-        installed.sort(new ResolveInfo.DisplayNameComparator(context.getPackageManager()));
-        ArrayList<ResolveInfo> filtered=new ArrayList<>(installed);
-        LinearLayout body=Ui.column(context);body.setPadding(Ui.dp(context,20),Ui.dp(context,8),Ui.dp(context,20),0);
-        TextInputLayout field=new TextInputLayout(context);field.setHint("Search apps");TextInputEditText search=new TextInputEditText(field.getContext());search.setSingleLine(true);field.addView(search);body.addView(field);
-        ListView list=new ListView(context);list.setDivider(null);body.addView(list,new LinearLayout.LayoutParams(-1,Ui.dp(context,360)));
-        BaseAdapter adapter=new BaseAdapter(){
-            public int getCount(){return filtered.size();}public Object getItem(int n){return filtered.get(n);}public long getItemId(int n){return n;}
-            public View getView(int n,View recycled,ViewGroup parent){ResolveInfo info=filtered.get(n);LinearLayout row=new LinearLayout(context);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(Ui.dp(context,4),Ui.dp(context,12),0,Ui.dp(context,12));
-                ImageView icon=new ImageView(context);icon.setImageDrawable(info.loadIcon(context.getPackageManager()));row.addView(icon,new LinearLayout.LayoutParams(Ui.dp(context,36),Ui.dp(context,36)));
-                TextView name=new TextView(context);name.setText(info.loadLabel(context.getPackageManager()));name.setTextSize(17);name.setPadding(Ui.dp(context,14),0,0,0);row.addView(name,new LinearLayout.LayoutParams(0,-2,1));return row;}
-        };list.setAdapter(adapter);
-        AlertDialog dialog=new MaterialAlertDialogBuilder(context).setTitle("Choose app").setView(body).setNegativeButton("Cancel",null).create();
-        list.setOnItemClickListener((parent,view,index,id)->{ResolveInfo app=filtered.get(index);dialog.dismiss();appActions(app);});
-        search.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void afterTextChanged(Editable e){}public void onTextChanged(CharSequence s,int st,int b,int c){String query=s.toString().toLowerCase(Locale.ROOT);filtered.clear();for(ResolveInfo info:installed)if(info.loadLabel(context.getPackageManager()).toString().toLowerCase(Locale.ROOT).contains(query))filtered.add(info);adapter.notifyDataSetChanged();}});
-        dialog.show();
+
+    void show(String title, String unsetLabel, String current, Runnable timing) {
+        this.current = current;
+        if (unsetLabel != null) actions.add(new Entry(new Targets.Choice(unsetLabel, null), null));
+        for (int i = 0; i < Targets.ACTIONS.length; i++) {
+            if (i == 0 && !context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH)) continue;
+            actions.add(new Entry(new Targets.Choice(Targets.LABELS[i], Targets.ACTIONS[i]), null));
+        }
+        sheet = new BottomSheetDialog(context);
+        sheet.setDismissWithAnimation(true);
+        LinearLayout body = Ui.column(context);
+        body.setPadding(dp(18), dp(12), dp(18), dp(14));
+        body.setFocusableInTouchMode(true);
+        View handle = new View(context);
+        handle.setBackground(rounded(0xffa6a19d, 2));
+        LinearLayout.LayoutParams grip = new LinearLayout.LayoutParams(dp(34), dp(4));
+        grip.gravity = Gravity.CENTER_HORIZONTAL;
+        grip.bottomMargin = dp(12);
+        body.addView(handle, grip);
+        LinearLayout heading = Ui.actions(context, body);
+        TextView gesture = new TextView(context);
+        gesture.setText(title);
+        gesture.setTextSize(28);
+        gesture.setTypeface(null, Typeface.BOLD);
+        heading.addView(gesture, new LinearLayout.LayoutParams(0, -2, 1));
+        ImageButton back = Ui.navigationButton(context);
+        back.setContentDescription("Back to gestures");
+        back.setPadding(dp(12), dp(12), dp(12), dp(12));
+        back.setImageResource(R.drawable.ic_back);
+        back.setOnClickListener(v -> sheet.cancel());
+        heading.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        int accent = Ui.color(context, androidx.appcompat.R.attr.colorPrimary);
+        int surface = Ui.color(context, com.google.android.material.R.attr.colorSurfaceContainer);
+        TabLayout tabs = new TabLayout(context);
+        tabs.setBackground(rounded(surface, 24));
+        tabs.setTabMode(TabLayout.MODE_FIXED);
+        tabs.setTabGravity(TabLayout.GRAVITY_FILL);
+        tabs.setTabIndicatorFullWidth(true);
+        tabs.setTabRippleColor(null);
+        tabs.setSelectedTabIndicator(new InsetDrawable(rounded(accent, 22), dp(4)));
+        tabs.setSelectedTabIndicatorColor(accent);
+        tabs.setSelectedTabIndicatorGravity(TabLayout.INDICATOR_GRAVITY_STRETCH);
+        tabs.setTabTextColors(Ui.color(context, com.google.android.material.R.attr.colorOnSurfaceVariant),
+            Ui.color(context, com.google.android.material.R.attr.colorOnPrimary));
+        tabs.addTab(tabs.newTab().setText("Actions"));
+        tabs.addTab(tabs.newTab().setText("Apps"));
+        LinearLayout.LayoutParams segment = new LinearLayout.LayoutParams(-1, dp(48));
+        segment.topMargin = dp(6);
+        segment.bottomMargin = dp(12);
+        body.addView(tabs, segment);
+        search = new EditText(context);
+        search.setSingleLine();
+        search.setHint("Search apps");
+        search.setTextSize(16);
+        search.setBackground(rounded(surface, 16));
+        search.setPadding(dp(16), 0, dp(16), 0);
+        Drawable lens = context.getDrawable(android.R.drawable.ic_menu_search).mutate();
+        lens.setTint(Ui.color(context, com.google.android.material.R.attr.colorOnSurfaceVariant));
+        lens.setBounds(0, 0, dp(20), dp(20));
+        search.setCompoundDrawablesRelative(lens, null, null, null);
+        search.setCompoundDrawablePadding(dp(10));
+        LinearLayout.LayoutParams field = new LinearLayout.LayoutParams(-1, dp(48));
+        field.bottomMargin = dp(10);
+        body.addView(search, field);
+        list = new ListView(context);
+        list.setBackground(rounded(surface, 20));
+        list.setClipToOutline(true);
+        list.setDivider(null);
+        list.setDrawSelectorOnTop(true);
+        list.setAdapter(rows);
+        int height = Math.min(dp(340), context.getResources().getDisplayMetrics().heightPixels / 3);
+        LinearLayout.LayoutParams results = new LinearLayout.LayoutParams(-1, height);
+        results.weight = 1;
+        body.addView(list, results);
+        empty = Ui.text(context, body, "", 16, true);
+        if (timing != null) Ui.button(context, body, "Press timing", false, v -> { sheet.dismiss(); timing.run(); });
+        list.setOnItemClickListener((parent, view, position, id) -> pick(visible.get(position)));
+        search.addTextChangedListener(new TextWatcher() {
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            public void afterTextChanged(Editable value) {}
+            public void onTextChanged(CharSequence s, int start, int before, int count) { refresh(); }
+        });
+        tabs.addOnTabSelectedListener(new TabLayout.OnTabSelectedListener() {
+            public void onTabSelected(TabLayout.Tab tab) {
+                browsingApps = tab.getPosition() == 1;
+                if (browsingApps && apps == null && !loading) loadApps();
+                refresh();
+                list.setSelection(0);
+            }
+            public void onTabUnselected(TabLayout.Tab tab) {}
+            public void onTabReselected(TabLayout.Tab tab) {}
+        });
+        sheet.setContentView(body);
+        refresh();
+        sheet.getBehavior().setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED);
+        sheet.show();
     }
-    private void appActions(ResolveInfo app){
-        String appName=app.loadLabel(context.getPackageManager()).toString();
-        Targets.Choice open=new Targets.Choice(appName,new ComponentName(app.activityInfo.packageName,app.activityInfo.name).flattenToString());
-        ArrayList<Targets.Choice> choices=Targets.shortcuts(context,app);
-        if(choices.isEmpty()){selected.select(open);return;}
-        choices.add(0,open);String[] labels=new String[choices.size()];labels[0]="Open app";for(int i=1;i<labels.length;i++)labels[i]=choices.get(i).label;
-        new MaterialAlertDialogBuilder(context).setTitle(appName).setItems(labels,(d,index)->selected.select(choices.get(index))).setNegativeButton("Cancel",null).show();
+
+    private void loadApps() {
+        loading = true;
+        new Thread(() -> {
+            List<Entry> found = new ArrayList<>();
+            PackageManager pm = context.getPackageManager();
+            for (ResolveInfo app : pm.queryIntentActivities(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)) {
+                if (!app.activityInfo.exported || context.getPackageName().equals(app.activityInfo.packageName)) continue;
+                String target = new ComponentName(app.activityInfo.packageName, app.activityInfo.name).flattenToString();
+                found.add(new Entry(new Targets.Choice(app.loadLabel(pm).toString(), target), app));
+            }
+            Collator collator = Collator.getInstance();
+            found.sort((a, b) -> collator.compare(a.choice.label, b.choice.label));
+            context.getMainExecutor().execute(() -> {
+                if (!sheet.isShowing()) return;
+                apps = found;
+                loading = false;
+                refresh();
+            });
+        }, "PlusKey-app-picker").start();
     }
+
+    private void refresh() {
+        search.setVisibility(browsingApps ? View.VISIBLE : View.GONE);
+        visible.clear();
+        if (!browsingApps) visible.addAll(actions);
+        else if (apps != null) {
+            String query = search.getText().toString().trim().toLowerCase(Locale.ROOT);
+            for (Entry entry : apps) if (entry.searchName.contains(query)) visible.add(entry);
+        }
+        empty.setText(loading ? "Loading apps…" : "No matching apps");
+        empty.setVisibility(visible.isEmpty() ? View.VISIBLE : View.GONE);
+        list.setVisibility(visible.isEmpty() ? View.GONE : View.VISIBLE);
+        rows.notifyDataSetChanged();
+    }
+
+    private void pick(Entry entry) {
+        if (entry.app != null) {
+            List<Targets.Choice> shortcuts = Targets.shortcuts(context, entry.app);
+            if (!shortcuts.isEmpty()) {
+                shortcuts.add(0, entry.choice);
+                String[] labels = new String[shortcuts.size()];
+                int checked = -1;
+                for (int i = 0; i < labels.length; i++) {
+                    labels[i] = i == 0 ? "Open app" : shortcuts.get(i).label;
+                    if (Objects.equals(shortcuts.get(i).target, current)) checked = i;
+                }
+                new com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+                    .setTitle(entry.choice.label).setSingleChoiceItems(labels, checked, (dialog, index) -> {
+                        dialog.dismiss();
+                        finish(shortcuts.get(index));
+                    }).setNegativeButton("Back", null).show();
+                return;
+            }
+        }
+        finish(entry.choice);
+    }
+
+    private void finish(Targets.Choice choice) {
+        sheet.dismiss();
+        selected.select(choice);
+    }
+
+    static int actionIcon(String target) {
+        if (target == null) return android.R.drawable.ic_menu_close_clear_cancel;
+        switch (target) {
+            case "action:torch": return R.drawable.ic_flashlight;
+            case "action:screenshot": return R.drawable.ic_capture;
+            case "action:lock": return android.R.drawable.ic_lock_lock;
+            case "action:notifications": return android.R.drawable.ic_dialog_info;
+            case "action:quick_settings": return android.R.drawable.ic_menu_preferences;
+            case "action:media_toggle": return android.R.drawable.ic_media_play;
+            case "action:media_next": return android.R.drawable.ic_media_next;
+            case "action:media_previous": return android.R.drawable.ic_media_previous;
+            case "action:silent": return android.R.drawable.ic_lock_silent_mode;
+            default: return android.R.drawable.ic_lock_silent_mode_off;
+        }
+    }
+
+    private final class Rows extends BaseAdapter {
+        public int getCount() { return visible.size(); }
+        public Entry getItem(int index) { return visible.get(index); }
+        public long getItemId(int index) { return index; }
+        public View getView(int index, View recycled, ViewGroup parent) {
+            LinearLayout row = (LinearLayout) recycled;
+            if (row == null) {
+                row = new LinearLayout(context);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                row.setMinimumHeight(dp(52));
+                row.setPadding(dp(16), dp(4), dp(16), dp(4));
+                row.addView(new ImageView(context), new LinearLayout.LayoutParams(dp(28), dp(28)));
+                TextView label = new TextView(context);
+                label.setPadding(dp(14), 0, dp(8), 0);
+                label.setTextSize(16);
+                row.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
+                TextView check = new TextView(context);
+                check.setText("✓");
+                check.setTextSize(21);
+                check.setTextColor(Ui.color(context, androidx.appcompat.R.attr.colorPrimary));
+                row.addView(check);
+            }
+            Entry entry = getItem(index);
+            ImageView icon = (ImageView) row.getChildAt(0);
+            if (entry.app == null) {
+                icon.setImageResource(actionIcon(entry.choice.target));
+                icon.setColorFilter(Ui.color(context, com.google.android.material.R.attr.colorOnSurface));
+            } else {
+                icon.clearColorFilter();
+                Drawable drawable = icons.get(entry.choice.target);
+                if (drawable == null) {
+                    drawable = entry.app.loadIcon(context.getPackageManager());
+                    if (drawable != null) icons.put(entry.choice.target, drawable);
+                }
+                icon.setImageDrawable(drawable);
+            }
+            ((TextView) row.getChildAt(1)).setText(entry.choice.label);
+            boolean checked = Objects.equals(current, entry.choice.target);
+            row.setBackgroundColor(checked ? 0x18ff902f : android.graphics.Color.TRANSPARENT);
+            row.getChildAt(2).setVisibility(checked ? View.VISIBLE : View.INVISIBLE);
+            row.setStateDescription(checked ? "Selected" : null);
+            return row;
+        }
+    }
+    private GradientDrawable rounded(int color, int radius) {
+        GradientDrawable shape = new GradientDrawable();
+        shape.setCornerRadius(dp(radius));
+        shape.setColor(color);
+        return shape;
+    }
+
+    private int dp(int n) { return Ui.dp(context, n); }
 }

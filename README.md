@@ -4,6 +4,10 @@
 
 Customize the OnePlus Plus Key with separate actions, apps, or app shortcuts for single, double, triple, and long presses. Built-in actions include flashlight, sound modes, screenshot, screen lock, notifications, quick settings, media, and volume.
 
+| Press assignments | Action picker | Press timing |
+| :---: | :---: | :---: |
+| ![Short, double, triple, and long press assignments](docs/screenshots/press-assignments.png) | ![Built-in actions for short press](docs/screenshots/action-picker.png) | ![Press timing slider set to 200 ms](docs/screenshots/press-timing.png) |
+
 ## Install and setup
 
 Plus Key works with Shizuku 13 or later or standalone using Wireless debugging. Install the APK from the latest release’s **Assets**, then open **Settings** in Plus Key.

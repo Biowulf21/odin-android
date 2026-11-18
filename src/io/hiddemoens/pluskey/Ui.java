@@ -1,6 +1,9 @@
 package io.hiddemoens.pluskey;
 import android.content.Context;
-import android.graphics.Typeface;
+import android.content.res.ColorStateList;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.view.*;
 import android.widget.*;
 import com.google.android.material.button.MaterialButton;
@@ -10,6 +13,17 @@ import com.google.android.material.color.MaterialColors;
 final class Ui {
     static int dp(Context c,int n){return(int)(n*c.getResources().getDisplayMetrics().density+.5f);}
     static int color(Context c,int attr){return MaterialColors.getColor(c,attr,0xff202020);}
+    static ImageButton navigationButton(Context context) {
+        ImageButton button = new ImageButton(context);
+        button.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        GradientDrawable mask = new GradientDrawable();
+        mask.setShape(GradientDrawable.OVAL);
+        mask.setColor(Color.WHITE);
+        int highlight = color(context, androidx.appcompat.R.attr.colorControlHighlight);
+        button.setBackground(new RippleDrawable(ColorStateList.valueOf(highlight), null, mask));
+        button.setImageTintList(ColorStateList.valueOf(color(context, androidx.appcompat.R.attr.colorPrimary)));
+        return button;
+    }
     static LinearLayout column(Context c){LinearLayout layout=new LinearLayout(c);layout.setOrientation(1);return layout;}
     static TextView text(Context c,LinearLayout root,String value,int size,boolean secondary){
         TextView text=new TextView(c);text.setText(value);text.setTextSize(size);text.setTextColor(color(c,secondary?com.google.android.material.R.attr.colorOnSurfaceVariant:com.google.android.material.R.attr.colorOnSurface));
