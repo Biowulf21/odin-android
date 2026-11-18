@@ -4,9 +4,11 @@
 
 Customize the OnePlus Plus Key with separate actions, apps, or app shortcuts for single, double, triple, and long presses. Built-in actions include flashlight, sound modes, screenshot, screen lock, notifications, quick settings, media, and volume.
 
-| Press assignments | Action picker | Press timing |
-| :---: | :---: | :---: |
-| ![Short, double, triple, and long press assignments](docs/screenshots/press-assignments.png) | ![Built-in actions for short press](docs/screenshots/action-picker.png) | ![Press timing slider set to 200 ms](docs/screenshots/press-timing.png) |
+<p align="center">
+  <img src="docs/screenshots/press-assignments.png" width="32%" alt="Short, double, triple, and long press assignments">
+  <img src="docs/screenshots/action-picker.png" width="32%" alt="Built-in actions for short press">
+  <img src="docs/screenshots/press-timing.png" width="32%" alt="Press timing slider set to 200 ms">
+</p>
 
 ## Install and setup
 
