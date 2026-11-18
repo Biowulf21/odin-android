@@ -71,6 +71,7 @@ final class DeviceActions {
     static synchronized void run(String action)throws Exception{
         String code=null;
         switch(action){
+            case "action:assistant":code=String.valueOf(android.view.KeyEvent.KEYCODE_VOICE_ASSIST);break;
             case "action:screenshot":code="120";break;case "action:lock":code="223";break;
             case "action:media_toggle":code="85";break;case "action:media_next":code="87";break;case "action:media_previous":code="88";break;
             case "action:volume_up":code="24";break;case "action:volume_down":code="25";break;

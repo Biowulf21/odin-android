@@ -80,8 +80,32 @@ public final class MainActivity extends AppCompatActivity {
             handler.postDelayed(this, STATUS_CHECK_MS);
         }
     };
+    private int configuringGesture;
+    private String configuringPackage;
+    private final androidx.activity.result.ActivityResultLauncher<Intent> shortcutSetup =
+        registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(), result -> {
+            String owner = configuringPackage;
+            configuringPackage = null;
+            if (owner == null || result.getResultCode() != RESULT_OK || result.getData() == null) return;
+            try {
+                Targets.Choice choice = ConfiguredShortcut.save(this, owner, result.getData());
+                saveChoice(configuringGesture, choice);
+            } catch (RuntimeException error) {
+                toast("App did not return a usable shortcut");
+            }
+        });
+
+    @Override protected void onSaveInstanceState(Bundle state) {
+        super.onSaveInstanceState(state);
+        state.putString("shortcutOwner", configuringPackage);
+        state.putInt("shortcutGesture", configuringGesture);
+    }
     protected void onCreate(Bundle saved){
         super.onCreate(saved);
+        if (saved != null) {
+            configuringPackage = saved.getString("shortcutOwner");
+            configuringGesture = saved.getInt("shortcutGesture");
+        }
         File mailboxDir = getExternalFilesDir(null);
         updates=new Updates(this);mailbox=new Mailbox(mailboxDir);wireless=WirelessController.get(this);setup=new SetupSheet(this,wireless);
         Shizuku.addRequestPermissionResultListener(shizukuPermission);
@@ -495,13 +519,26 @@ public final class MainActivity extends AppCompatActivity {
             String current = mailbox.selected(gesture);
             Runnable timing = gesture == KeyPress.DOUBLE || gesture == KeyPress.TRIPLE ? this::showClickInterval : null;
             new ChoicePicker(this, choice -> {
-                try {
-                    mailbox.select(gesture, choice.target);
-                    if (choice.target != null) Targets.remember(this, choice);
-                    showSelections();
-                } catch (IOException error) { toast("Could not save selection"); }
+                if (choice.target != null && choice.target.startsWith("configure:")) {
+                    ComponentName component = ComponentName.unflattenFromString(choice.target.substring("configure:".length()));
+                    configuringGesture = gesture;
+                    configuringPackage = component.getPackageName();
+                    try {
+                        shortcutSetup.launch(new Intent(Intent.ACTION_CREATE_SHORTCUT).setComponent(component));
+                    } catch (ActivityNotFoundException | SecurityException error) {
+                        configuringPackage = null;
+                        toast("Shortcut setup unavailable");
+                    }
+                } else saveChoice(gesture, choice);
             }).show(title, unsetLabel, current, timing);
         } catch (IOException error) { toast("Could not read selection"); }
+    }
+    private void saveChoice(int gesture, Targets.Choice choice) {
+        try {
+            mailbox.select(gesture, choice.target);
+            if (choice.target != null) Targets.remember(this, choice);
+            showSelections();
+        } catch (IOException error) { toast("Could not save selection"); }
     }
     private String systemAction(){try{return Settings.System.getString(getContentResolver(),Helper.ONEPLUS_ACTION_SETTING);}catch(Exception error){return null;}}
     private void showSelections(){

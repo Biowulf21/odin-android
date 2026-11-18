@@ -23,7 +23,8 @@ Optional **Automatic startup** uses a protected-settings permission to turn on W
 
 - **Single, double, and triple press** — Double and triple press are off by default, so single press fires on release. When either is enabled, **Click interval** sets the time to start the next press. It defaults to 200 ms and can be adjusted from 100 to 500 ms.
 - **Long press** — Toggle flashlight is the default on fresh installs with a flash. Custom long press fires once after 500 ms. Set the OnePlus assignment to **Do nothing** for custom long press, or choose **Managed by OnePlus** to keep the native action.
-- **While locked** — Flashlight, sound, media, volume, and lock actions can run while locked. On Android 16 or later, apps, shortcuts, and other actions can wake the screen and run if you unlock within 30 seconds and the firmware delivers the unlock callback. A new custom press replaces any pending action.
+- **Assistant and app actions** — Choose **Start default assistant** under Actions. Under Apps, search for **Create note**, **Hands-free voice**, or **Configure shortcut**. Installed apps determine which options appear. Configured shortcuts run after unlocking.
+- **While locked** — Flashlight, sound, media, volume, and lock actions can run while locked. Secure camera, lock-screen activities, note and hands-free handlers, and the default assistant can be requested while locked. Android and the receiving app control what opens and when authentication is required. On Android 16 or later, other apps, shortcuts, and actions can wake the screen and run if you unlock within 30 seconds and the firmware delivers the unlock callback. A new custom press replaces any pending action.
 
 Successful custom actions give brief haptic feedback. Plus Key observes native button events, and OnePlus can still act on them. Accessible static app shortcuts are available in the picker.
 

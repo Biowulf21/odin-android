@@ -9,7 +9,7 @@ final class Options {
             default:return -1;
         }
     }
-    static final String[] ACTIONS={"action:torch","action:sound_cycle","action:vibrate_toggle","action:silent_toggle","action:silent","action:vibrate","action:ring","action:screenshot","action:lock","action:notifications","action:quick_settings","action:media_toggle","action:media_next","action:media_previous","action:volume_up","action:volume_down"};
+    static final String[] ACTIONS={"action:torch","action:sound_cycle","action:vibrate_toggle","action:silent_toggle","action:silent","action:vibrate","action:ring","action:screenshot","action:lock","action:notifications","action:quick_settings","action:media_toggle","action:media_next","action:media_previous","action:volume_up","action:volume_down","action:assistant"};
     static final String LOCKED_ACTIVITY = "locked-activity:";
     static boolean isLockedActivity(String target) {
         return target != null && target.startsWith(LOCKED_ACTIVITY)
@@ -20,8 +20,15 @@ final class Options {
         return target != null && target.startsWith(SECURE_CAMERA)
             && validComponent(target.substring(SECURE_CAMERA.length()) + "/.Camera");
     }
+    static boolean isLockedAppAction(String value) {
+        if (value == null || !(value.startsWith("note:") || value.startsWith("voice:"))) return false;
+        return validComponent(value.substring(value.indexOf(':') + 1) + "/.Handler");
+    }
+    static boolean isConfigured(String value) {
+        return value != null && value.matches("configured:[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}");
+    }
     static boolean validTarget(String value) {
-        if(validComponent(value) || isSecureCamera(value) || isLockedActivity(value))return true;
+        if(isConfigured(value) || isLockedAppAction(value) || validComponent(value) || isSecureCamera(value) || isLockedActivity(value))return true;
         if(value==null)return false;
         for(String action:ACTIONS)if(action.equals(value))return true;
         if(!value.startsWith("shortcut:")||value.length()>32768)return false;

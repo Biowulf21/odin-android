@@ -320,6 +320,7 @@ public final class Helper {
         if (!running) return;
         if (target.startsWith("action:")) DeviceActions.run(target);
         else for (android.content.Intent intent : Targets.intents(target)) {
+            if (target.startsWith("voice:")) intent.putExtra(android.speech.RecognizerIntent.EXTRA_SECURE, !isAwakeAndUnlocked());
             String result = command("/system/bin/am", "start", "--user", "0",
                 intent.toUri(android.content.Intent.URI_INTENT_SCHEME));
             if (result.contains("Error") || result.contains("Exception")) throw new IOException(result);

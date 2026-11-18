@@ -11,7 +11,7 @@ import java.nio.charset.StandardCharsets;
 /** Only app-published, enabled static shortcuts that resolve to that app. */
 final class Targets {
     static final String[] ACTIONS=Options.ACTIONS;
-    static final String[] LABELS={"Toggle flashlight","Sound → Vibrate → Silent","Sound ↔ Vibrate","Sound ↔ Silent","Silent","Vibrate","Sound on","Screenshot","Lock screen","Open notifications","Open quick settings","Play / pause","Next track","Previous track","Volume up","Volume down"};
+    static final String[] LABELS={"Toggle flashlight","Sound → Vibrate → Silent","Sound ↔ Vibrate","Sound ↔ Silent","Silent","Vibrate","Sound on","Screenshot","Lock screen","Open notifications","Open quick settings","Play / pause","Next track","Previous track","Volume up","Volume down","Start default assistant"};
     static final class Choice {final String label,target;Choice(String label,String target){this.label=label;this.target=target;}}
     static String label(Context context,String target){
         if(target==null)return "Managed by OnePlus";
@@ -93,6 +93,16 @@ final class Targets {
     }
     static Intent[] intents(String target)throws Exception{
         if(!Options.validTarget(target))throw new IllegalArgumentException("Invalid action");
+        if (Options.isConfigured(target)) {
+            return new Intent[]{new Intent().setClassName("io.hiddemoens.pluskey", "io.hiddemoens.pluskey.ConfiguredShortcut")
+                .putExtra("target", target).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)};
+        }
+        if (Options.isLockedAppAction(target)) {
+            boolean voice = target.startsWith("voice:");
+            Intent intent = new Intent(voice ? android.speech.RecognizerIntent.ACTION_VOICE_SEARCH_HANDS_FREE : Intent.ACTION_CREATE_NOTE);
+            if (voice) intent.putExtra(android.speech.RecognizerIntent.EXTRA_SECURE, true);
+            return new Intent[]{intent.setPackage(target.substring(target.indexOf(':') + 1)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)};
+        }
         if (Options.isLockedActivity(target)) {
             ComponentName component = ComponentName.unflattenFromString(target.substring(Options.LOCKED_ACTIVITY.length()));
             return new Intent[]{new Intent(Intent.ACTION_MAIN).setComponent(component).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)};

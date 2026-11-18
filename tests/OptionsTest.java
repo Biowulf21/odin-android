@@ -12,6 +12,13 @@ public final class OptionsTest {
         CoreTest.check(Options.validCode("012345") && !Options.validCode("12345") && !Options.validCode("1234567"), "six digit code including leading zero");
         CoreTest.check(Policy.shouldWakeScreen("locked-activity:com.example.app/.Main"), "locked app wakes display");
         CoreTest.check(!Policy.shouldWakeScreen("action:torch") && !Policy.shouldWakeScreen("com.example.app/.Main"), "other gestures preserve display state");
+        for (String target : new String[]{"note:com.example.notes", "voice:com.example.voice", "action:assistant"}) {
+            CoreTest.check(Options.validTarget(target) && Policy.shouldWakeScreen(target), "lock-screen assignment: " + target);
+        }
+        CoreTest.check(!Options.validTarget("voice:com.example/.Main"), "voice requires package");
+        CoreTest.check(!Options.validTarget("configure:com.example/.Main"), "setup entry cannot be assigned");
+        String configured = "configured:28cb4b53-cb15-4c0b-97fb-7b00776fd841";
+        CoreTest.check(Options.validTarget(configured) && !Policy.mayRunWhileLocked(configured), "configured shortcuts wait for unlock");
         String secureCamera = Options.SECURE_CAMERA + "com.example.camera";
         CoreTest.check(Policy.shouldWakeScreen(secureCamera), "secure camera wakes display");
         CoreTest.check(Options.validTarget(secureCamera) && Policy.mayRunWhileLocked(secureCamera), "secure camera allowed while locked");
