@@ -582,7 +582,7 @@ public final class MainActivity extends AppCompatActivity {
             icon.animate().scaleX(1f).scaleY(1f).setDuration(180).start();
         }
         try{String target=mailbox.selected(gesture);if(target==null)return;
-            if(target.startsWith("action:")){String current=mailbox.readStatus(System.currentTimeMillis());if(current!=null&&current.startsWith("Listening|")){mailbox.requestPreview(gesture);return;}toast("Start your button first to preview this action");return;}
+            if(target.startsWith("action:") || Options.mediaBranches(target) != null){String current=mailbox.readStatus(System.currentTimeMillis());if(current!=null&&current.startsWith("Listening|")){mailbox.requestPreview(gesture);return;}toast("Start your button first to preview this action");return;}
             startActivities(Targets.intents(target));
         }catch(Exception error){toast("Action unavailable. Choose another.");}
     }

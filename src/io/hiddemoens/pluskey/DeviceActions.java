@@ -28,7 +28,15 @@ final class DeviceActions {
             Class<?> thread=Class.forName("android.app.ActivityThread");
             Object system=thread.getMethod("systemMain").invoke(null);
             Context base=(Context)thread.getMethod("getSystemContext").invoke(system);
-            context=base.createPackageContext("com.android.shell",0);
+            Context shell = base.createPackageContext("com.android.shell", 0);
+            // createPackageContext inherits the system context's "android" operation attribution.
+            // Construct an app context for the package that actually owns this process UID.
+            java.lang.reflect.Field info = base.getClass().getDeclaredField("mPackageInfo");
+            info.setAccessible(true);
+            java.lang.reflect.Method create = base.getClass().getDeclaredMethod("createAppContext",
+                thread, Class.forName("android.app.LoadedApk"));
+            create.setAccessible(true);
+            context = (Context) create.invoke(null, system, info.get(shell));
         }
         return context;
     }
@@ -81,7 +89,7 @@ final class DeviceActions {
         String code=null;
         switch(action){
             case "action:previous_app":
-                Helper.command("/system/bin/input", "keyevent", "KEYCODE_APP_SWITCH", "KEYCODE_APP_SWITCH");
+                previousApp(context());
                 return;
             case "action:media_pause":code="127";break;
             case "action:assistant":code=String.valueOf(android.view.KeyEvent.KEYCODE_VOICE_ASSIST);break;
@@ -143,6 +151,20 @@ final class DeviceActions {
         audio.getClass().getMethod("setRingerModeInternal",int.class).invoke(audio,next);
         if(audio.getRingerMode()!=next)throw new IllegalStateException("Phone did not apply sound mode");
     }
+    private static void previousApp(Context ctx) {
+        android.app.ActivityManager apps = ctx.getSystemService(android.app.ActivityManager.class);
+        List<android.app.ActivityManager.RunningTaskInfo> visible = apps.getRunningTasks(1);
+        if (visible.isEmpty()) throw new IllegalStateException("Foreground task unavailable");
+        int current = visible.get(0).taskId;
+        for (android.app.ActivityManager.RecentTaskInfo task : apps.getRecentTasks(32, 0)) {
+            if (task.id >= 0 && task.taskId != current) {
+                apps.moveTaskToFront(task.taskId, 0);
+                return;
+            }
+        }
+        throw new IllegalStateException("No previous app");
+    }
+
     private static void toggleHotspot(Context ctx) throws Exception {
         WifiManager wifi = ctx.getSystemService(WifiManager.class);
         int state = (int) WifiManager.class.getMethod("getWifiApState").invoke(wifi);
@@ -164,6 +186,15 @@ final class DeviceActions {
     }
 
     private static void mobileData(Context ctx, String action) throws Exception {
+        // app_process does not run ZygoteInit's telephony service initialization.
+        if (Build.VERSION.SDK_INT >= 31) {
+            Class<?> initializer = Class.forName("android.telephony.TelephonyFrameworkInitializer");
+            if (initializer.getMethod("getTelephonyServiceManager").invoke(null) == null) {
+                Class<?> manager = Class.forName("android.os.TelephonyServiceManager");
+                initializer.getMethod("setTelephonyServiceManager", manager)
+                    .invoke(null, manager.getConstructor().newInstance());
+            }
+        }
         SubscriptionManager subscriptions = ctx.getSystemService(SubscriptionManager.class);
         int current = SubscriptionManager.getDefaultDataSubscriptionId();
         if (subscriptions == null || subscriptions.getActiveSubscriptionInfo(current) == null) {
@@ -201,7 +232,7 @@ final class DeviceActions {
     }
     private static void selectDataSim(SubscriptionManager subscriptions, TelephonyManager phones, int id, boolean enabled) throws Exception {
         TelephonyManager destination = phones.createForSubscriptionId(id);
-        SubscriptionManager.class.getMethod("setDefaultDataSubscriptionId", int.class).invoke(subscriptions, id);
+        SubscriptionManager.class.getMethod("setDefaultDataSubId", int.class).invoke(subscriptions, id);
         if (destination.isDataEnabled() != enabled) destination.setDataEnabled(enabled);
     }
     static void feedback()throws Exception{
