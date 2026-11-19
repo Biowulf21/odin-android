@@ -239,6 +239,9 @@ public final class Helper {
             }
             if (target == null) throw new IOException("No app selected; open Plus Key and choose an app");
             if (!preview && pendingUnlock != null) pendingUnlock.finish();
+            String assignment = target;
+            String[] branches = Options.mediaBranches(target);
+            if (branches != null) target = branches[DeviceActions.mediaPlaying() ? 0 : 1];
             if ((!preview && Policy.mayRunWhileLocked(target)) || isAwakeAndUnlocked()) {
                 if (!preview && Policy.shouldWakeScreen(target)) {
                     wakeDisplay();
@@ -247,7 +250,7 @@ public final class Helper {
             } else if (preview) {
                 last = "Skipped preview: phone locked, asleep, or state unavailable";
             } else {
-                pendingUnlock = new PendingUnlock(target, gesture);
+                pendingUnlock = new PendingUnlock(target, assignment, gesture);
                 pendingUnlock.start();
             }
         } catch (Exception e) {
@@ -265,8 +268,11 @@ public final class Helper {
         Runnable unwatch;
         ScheduledFuture<?> timeout;
 
-        PendingUnlock(String target, int gesture) {
+        final String assignment;
+
+        PendingUnlock(String target, String assignment, int gesture) {
             this.target = target;
+            this.assignment = assignment;
             this.gesture = gesture;
         }
 
@@ -309,7 +315,7 @@ public final class Helper {
             try {
                 if (SystemClock.elapsedRealtime() >= deadline) {
                     last = "Skipped: unlock timed out";
-                } else if (!target.equals(mailbox.selected(gesture))) {
+                } else if (!assignment.equals(mailbox.selected(gesture))) {
                     last = "Skipped: action changed while waiting for unlock";
                 } else if (!isAwakeAndUnlocked()) {
                     return;

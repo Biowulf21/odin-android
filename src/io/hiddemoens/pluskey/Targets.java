@@ -11,11 +11,14 @@ import java.nio.charset.StandardCharsets;
 /** Only app-published, enabled static shortcuts that resolve to that app. */
 final class Targets {
     static final String[] ACTIONS=Options.ACTIONS;
-    static final String[] LABELS={"Toggle flashlight","Sound → Vibrate → Silent","Sound ↔ Vibrate","Sound ↔ Silent","Silent","Vibrate","Sound on","Screenshot","Lock screen","Open notifications","Open quick settings","Play / pause","Next track","Previous track","Volume up","Volume down","Start default assistant"};
+    static final String[] LABELS={"Toggle flashlight","Sound → Vibrate → Silent","Sound ↔ Vibrate","Sound ↔ Silent","Silent","Vibrate","Sound on","Screenshot","Lock screen","Open notifications","Open quick settings","Play / pause","Next track","Previous track","Volume up","Volume down","Start default assistant","Toggle Wi-Fi","Toggle mobile data","Switch data SIM",
+        "Previous app","Pause media or toggle flashlight","Pause media","Toggle hotspot","Do Not Disturb · 1 hour","Use SIM 1 for data","Use SIM 2 for data"};
     static final class Choice {final String label,target;Choice(String label,String target){this.label=label;this.target=target;}}
     static String label(Context context,String target){
         if(target==null)return "Managed by OnePlus";
         for(int i=0;i<ACTIONS.length;i++)if(ACTIONS[i].equals(target))return LABELS[i];
+        String[] branches = Options.mediaBranches(target);
+        if (branches != null) return "Playing: " + label(context, branches[0]) + " · Otherwise: " + label(context, branches[1]);
         String saved=context.getSharedPreferences("choices",0).getString(target,"");
         if(!saved.isEmpty())return saved;
         try{return context.getPackageManager().getActivityInfo(ComponentName.unflattenFromString(target),0).loadLabel(context.getPackageManager()).toString();}

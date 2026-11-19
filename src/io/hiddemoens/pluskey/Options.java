@@ -9,7 +9,17 @@ final class Options {
             default:return -1;
         }
     }
-    static final String[] ACTIONS={"action:torch","action:sound_cycle","action:vibrate_toggle","action:silent_toggle","action:silent","action:vibrate","action:ring","action:screenshot","action:lock","action:notifications","action:quick_settings","action:media_toggle","action:media_next","action:media_previous","action:volume_up","action:volume_down","action:assistant"};
+    static final String[] ACTIONS={"action:torch","action:sound_cycle","action:vibrate_toggle","action:silent_toggle","action:silent","action:vibrate","action:ring","action:screenshot","action:lock","action:notifications","action:quick_settings","action:media_toggle","action:media_next","action:media_previous","action:volume_up","action:volume_down","action:assistant","action:wifi_toggle","action:data_toggle","action:data_sim",
+        "action:previous_app","action:pause_torch","action:media_pause","action:hotspot","action:dnd_hour","action:data_slot1","action:data_slot2"};
+    static boolean builtIn(String target) {
+        for (String action : ACTIONS) if (action.equals(target)) return true;
+        return false;
+    }
+    static String[] mediaBranches(String target) {
+        if (target == null || !target.startsWith("media:")) return null;
+        String[] branches = target.substring(6).split(",", -1);
+        return branches.length == 2 && builtIn(branches[0]) && builtIn(branches[1]) ? branches : null;
+    }
     static final String LOCKED_ACTIVITY = "locked-activity:";
     static boolean offerLockedLabel(boolean hasSecureCamera, String appLabel, String activityLabel, java.util.Set<String> seen) {
         String label = activityLabel.trim();
@@ -35,7 +45,7 @@ final class Options {
     static boolean validTarget(String value) {
         if(isConfigured(value) || isLockedAppAction(value) || validComponent(value) || isSecureCamera(value) || isLockedActivity(value))return true;
         if(value==null)return false;
-        for(String action:ACTIONS)if(action.equals(value))return true;
+        if (builtIn(value) || mediaBranches(value) != null) return true;
         if(!value.startsWith("shortcut:")||value.length()>32768)return false;
         int split=value.indexOf(':',9);
         if(split<0||!validComponent(value.substring(9,split)+"/.Shortcut"))return false;

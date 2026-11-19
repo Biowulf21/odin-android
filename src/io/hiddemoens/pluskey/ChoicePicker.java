@@ -48,7 +48,12 @@ final class ChoicePicker {
     private EditText search;
     private ListView list;
     private TextView empty;
-    private String current;
+    private String current, gestureTitle, playing;
+    private int mediaStep, mainPosition;
+    private TextView gesture;
+    private TabLayout tabs;
+    private ImageButton back;
+    private View timingButton;
     private boolean browsingApps, loading;
     private final Rows rows = new Rows();
 
@@ -59,11 +64,14 @@ final class ChoicePicker {
 
     void show(String title, String unsetLabel, String current, Runnable timing) {
         this.current = current;
+        gestureTitle = title;
         if (unsetLabel != null) actions.add(new Entry(new Targets.Choice(unsetLabel, null), null));
         for (int i = 0; i < Targets.ACTIONS.length; i++) {
-            if (i == 0 && !context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH)) continue;
+            if (Targets.ACTIONS[i].equals("action:pause_torch")) continue;
+            if (Targets.ACTIONS[i].equals("action:torch") && !context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH)) continue;
             actions.add(new Entry(new Targets.Choice(Targets.LABELS[i], Targets.ACTIONS[i]), null));
         }
+        actions.add(new Entry(new Targets.Choice("If media is playing…", "media:"), null));
         sheet = new BottomSheetDialog(context);
         sheet.setDismissWithAnimation(true);
         LinearLayout body = Ui.column(context);
@@ -76,20 +84,28 @@ final class ChoicePicker {
         grip.bottomMargin = dp(12);
         body.addView(handle, grip);
         LinearLayout heading = Ui.actions(context, body);
-        TextView gesture = new TextView(context);
+        gesture = new TextView(context);
         gesture.setText(title);
         gesture.setTextSize(28);
         gesture.setTypeface(null, Typeface.BOLD);
         heading.addView(gesture, new LinearLayout.LayoutParams(0, -2, 1));
-        ImageButton back = Ui.navigationButton(context);
+        back = Ui.navigationButton(context);
         back.setContentDescription("Back to gestures");
         back.setPadding(dp(12), dp(12), dp(12), dp(12));
         back.setImageResource(R.drawable.ic_back);
-        back.setOnClickListener(v -> sheet.cancel());
+        back.setOnClickListener(v -> {
+            if (mediaStep == 0) sheet.cancel();
+            else showStep(mediaStep - 1);
+        });
+        sheet.setOnKeyListener((dialog, key, event) -> {
+            if (key != android.view.KeyEvent.KEYCODE_BACK || mediaStep == 0) return false;
+            if (event.getAction() == android.view.KeyEvent.ACTION_UP) showStep(mediaStep - 1);
+            return true;
+        });
         heading.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
         int accent = Ui.color(context, androidx.appcompat.R.attr.colorPrimary);
         int surface = Ui.color(context, com.google.android.material.R.attr.colorSurfaceContainer);
-        TabLayout tabs = new TabLayout(context);
+        tabs = new TabLayout(context);
         tabs.setBackground(rounded(surface, 24));
         tabs.setTabMode(TabLayout.MODE_FIXED);
         tabs.setTabGravity(TabLayout.GRAVITY_FILL);
@@ -138,7 +154,7 @@ final class ChoicePicker {
         results.weight = 1;
         body.addView(list, results);
         empty = Ui.text(context, body, "", 16, true);
-        if (timing != null) Ui.button(context, body, "Press timing", false, v -> { sheet.dismiss(); timing.run(); });
+        if (timing != null) timingButton = Ui.button(context, body, "Press timing", false, v -> { sheet.dismiss(); timing.run(); });
         list.setOnItemClickListener((parent, view, position, id) -> pick(visible.get(position)));
         search.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
@@ -220,7 +236,9 @@ final class ChoicePicker {
         search.setVisibility(browsingApps ? View.VISIBLE : View.GONE);
         legend.setVisibility(browsingApps && (!secureCameras.isEmpty() || !lockedApps.isEmpty()) ? View.VISIBLE : View.GONE);
         visible.clear();
-        if (!browsingApps) visible.addAll(actions);
+        if (mediaStep != 0) {
+            for (Entry entry : actions) if (Options.builtIn(entry.choice.target)) visible.add(entry);
+        } else if (!browsingApps) visible.addAll(actions);
         else if (apps != null) {
             String query = search.getText().toString().trim().toLowerCase(Locale.ROOT);
             for (Entry entry : apps) if (entry.searchName.contains(query)) visible.add(entry);
@@ -232,6 +250,23 @@ final class ChoicePicker {
     }
 
     private void pick(Entry entry) {
+        if (mediaStep == 1) {
+            playing = entry.choice.target;
+            showStep(2);
+            return;
+        }
+        if (mediaStep == 2) {
+            String target = "media:" + playing + "," + entry.choice.target;
+            finish(new Targets.Choice(Targets.label(context, target), target));
+            return;
+        }
+        if ("media:".equals(entry.choice.target)) {
+            mainPosition = list.getFirstVisiblePosition();
+            String[] saved = Options.mediaBranches(current);
+            playing = saved == null ? null : saved[0];
+            showStep(1);
+            return;
+        }
         if (entry.app != null && Options.validComponent(entry.choice.target)) {
             List<Targets.Choice> shortcuts = Targets.shortcuts(context, entry.app);
             shortcuts.addAll(0, lockedApps.getOrDefault(entry.app.activityInfo.packageName, Collections.emptyList()));
@@ -259,6 +294,33 @@ final class ChoicePicker {
         finish(entry.choice);
     }
 
+    private void showStep(int step) {
+        boolean forward = step > mediaStep;
+        mediaStep = step;
+        gesture.setText(step == 0 ? gestureTitle : step == 1 ? "If media is playing" : "Otherwise");
+        back.setContentDescription(step == 0 ? "Back to gestures" : step == 1 ? "Back to actions" : "Back to playback action");
+        tabs.setVisibility(step == 0 ? View.VISIBLE : View.GONE);
+        if (timingButton != null) timingButton.setVisibility(step == 0 ? View.VISIBLE : View.GONE);
+        refresh();
+        int position = step == 0 ? mainPosition : 0;
+        String selected = selectedTarget();
+        for (int i = 0; step != 0 && i < visible.size(); i++) {
+            if (visible.get(i).choice.target.equals(selected)) position = i;
+        }
+        list.setSelection(position);
+        list.animate().cancel();
+        list.setTranslationX((forward ? 1 : -1) * list.getWidth());
+        list.animate().translationX(0).setDuration(180).start();
+        gesture.announceForAccessibility(gesture.getText());
+    }
+
+    private String selectedTarget() {
+        if (mediaStep == 1) return playing;
+        String[] saved = Options.mediaBranches(current);
+        if (mediaStep == 2) return saved == null ? null : saved[1];
+        return saved == null ? current : "media:";
+    }
+
     private void finish(Targets.Choice choice) {
         sheet.dismiss();
         selected.select(choice);
@@ -266,8 +328,19 @@ final class ChoicePicker {
 
     static int actionIcon(String target) {
         if (target == null) return android.R.drawable.ic_menu_close_clear_cancel;
+        if (target.startsWith("media:")) return R.drawable.ic_smart;
         switch (target) {
             case "action:assistant": return android.R.drawable.ic_btn_speak_now;
+            case "action:previous_app": return R.drawable.ic_recent;
+            case "action:pause_torch": return R.drawable.ic_pause_torch;
+            case "action:media_pause": return R.drawable.ic_pause;
+            case "action:hotspot": return R.drawable.ic_hotspot;
+            case "action:dnd_hour": return R.drawable.ic_dnd;
+            case "action:data_slot1": return R.drawable.ic_sim1;
+            case "action:data_slot2": return R.drawable.ic_sim2;
+            case "action:wifi_toggle": return R.drawable.ic_wifi;
+            case "action:data_toggle": return R.drawable.ic_data;
+            case "action:data_sim": return R.drawable.ic_sim;
             case "action:torch": return R.drawable.ic_flashlight;
             case "action:screenshot": return R.drawable.ic_capture;
             case "action:lock": return android.R.drawable.ic_lock_lock;
@@ -327,7 +400,7 @@ final class ChoicePicker {
             label.setText(entry.choice.label);
             row.getChildAt(3).setVisibility(supportsLocked ? View.VISIBLE : View.GONE);
             label.setContentDescription(supportsLocked ? entry.choice.label + ", supports locked use" : null);
-            boolean checked = Objects.equals(current, entry.choice.target)
+            boolean checked = Objects.equals(selectedTarget(), entry.choice.target)
                 || (launcher && lockedApps.getOrDefault(entry.app.activityInfo.packageName, Collections.emptyList()).stream().anyMatch(option -> option.target.equals(current)))
                 || (launcher && (Options.SECURE_CAMERA + entry.app.activityInfo.packageName).equals(current));
             row.setBackgroundColor(checked ? 0x18ff902f : android.graphics.Color.TRANSPARENT);

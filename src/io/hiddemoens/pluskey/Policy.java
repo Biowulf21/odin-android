@@ -7,6 +7,15 @@ final class Policy {
     static boolean mayRunWhileLocked(String target) {
         if (shouldWakeScreen(target)) return true;
         switch (target) {
+            case "action:pause_torch":
+            case "action:media_pause":
+            case "action:hotspot":
+            case "action:dnd_hour":
+            case "action:data_slot1":
+            case "action:data_slot2":
+            case "action:wifi_toggle":
+            case "action:data_toggle":
+            case "action:data_sim":
             case "action:torch":
             case "action:lock":
             case "action:sound_cycle":

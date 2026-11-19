@@ -3,6 +3,10 @@ import java.io.File;
 import java.nio.file.Files;
 public final class OptionsTest {
     public static void main(String[] args) throws Exception {
+        CoreTest.check(Options.validTarget("media:action:media_next,action:previous_app"), "media branches persist");
+        CoreTest.check(!Options.validTarget("media:action:media_pause,action:unknown"), "reject unknown fallback");
+        CoreTest.check(!Options.validTarget("media:action:torch,action:torch,action:lock"), "require two branches");
+        CoreTest.check(!Policy.mayRunWhileLocked("action:previous_app"), "previous app requires unlock");
         CoreTest.check(Options.validComponent("com.google.ar.lens/com.google.vr.apps.ornament.app.lens.LensLauncherActivity"), "Lens component accepted");
         CoreTest.check(Options.validComponent("com.example.app/.MainActivity"), "relative class accepted");
         for (String bad : new String[]{"", "com.example", "com.example/.Main;reboot", "com.example/.Main\n", "com.example/--user", "a/b/c"})

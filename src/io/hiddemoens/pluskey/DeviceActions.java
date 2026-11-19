@@ -6,6 +6,11 @@ import android.hardware.camera2.*;
 import android.hardware.display.DisplayManager;
 import android.media.AudioManager;
 import android.os.*;
+import android.net.wifi.WifiManager;
+import android.telephony.SubscriptionInfo;
+import android.telephony.SubscriptionManager;
+import android.telephony.TelephonyManager;
+import java.util.List;
 import android.provider.Settings;
 import android.view.Display;
 import java.util.concurrent.*;
@@ -68,9 +73,17 @@ final class DeviceActions {
             }
         };
     }
+    static boolean mediaPlaying() throws Exception {
+        return context().getSystemService(AudioManager.class).isMusicActive();
+    }
+
     static synchronized void run(String action)throws Exception{
         String code=null;
         switch(action){
+            case "action:previous_app":
+                Helper.command("/system/bin/input", "keyevent", "KEYCODE_APP_SWITCH", "KEYCODE_APP_SWITCH");
+                return;
+            case "action:media_pause":code="127";break;
             case "action:assistant":code=String.valueOf(android.view.KeyEvent.KEYCODE_VOICE_ASSIST);break;
             case "action:screenshot":code="120";break;case "action:lock":code="223";break;
             case "action:media_toggle":code="85";break;case "action:media_next":code="87";break;case "action:media_previous":code="88";break;
@@ -79,7 +92,32 @@ final class DeviceActions {
         if(code!=null){Helper.command("/system/bin/input","keyevent",code);return;}
         if(action.equals("action:notifications")||action.equals("action:quick_settings")){Helper.command("/system/bin/cmd","statusbar",action.equals("action:notifications")?"expand-notifications":"expand-settings");return;}
         Context ctx=context();
-        if(action.equals("action:torch")){
+        switch (action) {
+            case "action:hotspot":
+                toggleHotspot(ctx);
+                return;
+            case "action:dnd_hour":
+                android.app.NotificationManager notifications = ctx.getSystemService(android.app.NotificationManager.class);
+                boolean quiet = notifications.getCurrentInterruptionFilter() != android.app.NotificationManager.INTERRUPTION_FILTER_ALL;
+                android.net.Uri until = quiet ? null : android.net.Uri.parse("condition://android/countdown/" +
+                    (System.currentTimeMillis() + TimeUnit.HOURS.toMillis(1)) + "/alarm/false");
+                notifications.getClass().getMethod("setZenMode", int.class, android.net.Uri.class, String.class)
+                    .invoke(notifications, quiet ? 0 : 1, until, "PlusKey");
+                return;
+            case "action:wifi_toggle":
+                int state = ctx.getSystemService(WifiManager.class).getWifiState();
+                if (state == WifiManager.WIFI_STATE_UNKNOWN) throw new IllegalStateException("Wi-Fi state unavailable");
+                boolean enabled = state == WifiManager.WIFI_STATE_ENABLED || state == WifiManager.WIFI_STATE_ENABLING;
+                Helper.command("/system/bin/cmd", "wifi", "set-wifi-enabled", enabled ? "disabled" : "enabled");
+                return;
+            case "action:data_toggle":
+            case "action:data_sim":
+            case "action:data_slot1":
+            case "action:data_slot2":
+                mobileData(ctx, action);
+                return;
+        }
+        if(action.equals("action:torch") || action.equals("action:pause_torch")){
             if(camera==null){
                 camera=(CameraManager)ctx.getSystemService(Context.CAMERA_SERVICE);
                 for(String id:camera.getCameraIdList()){
@@ -92,6 +130,10 @@ final class DeviceActions {
                 camera.registerTorchCallback(new CameraManager.TorchCallback(){public void onTorchModeChanged(String id,boolean enabled){if(id.equals(cameraId)){torch=enabled;initial.countDown();}}},new Handler(cameraThread.getLooper()));
                 initial.await(1,TimeUnit.SECONDS);
             }
+            if (action.equals("action:pause_torch") && !torch && mediaPlaying()) {
+                Helper.command("/system/bin/input", "keyevent", "KEYCODE_MEDIA_PAUSE");
+                return;
+            }
             boolean desired=!torch;camera.setTorchMode(cameraId,desired);torch=desired;return;
         }
         AudioManager audio=(AudioManager)ctx.getSystemService(Context.AUDIO_SERVICE);
@@ -100,6 +142,67 @@ final class DeviceActions {
         // Shell holds MODIFY_AUDIO_ROUTING; system control preserves all three modes.
         audio.getClass().getMethod("setRingerModeInternal",int.class).invoke(audio,next);
         if(audio.getRingerMode()!=next)throw new IllegalStateException("Phone did not apply sound mode");
+    }
+    private static void toggleHotspot(Context ctx) throws Exception {
+        WifiManager wifi = ctx.getSystemService(WifiManager.class);
+        int state = (int) WifiManager.class.getMethod("getWifiApState").invoke(wifi);
+        android.net.TetheringManager manager = ctx.getSystemService(android.net.TetheringManager.class);
+        if (state == 13) { // WIFI_AP_STATE_ENABLED
+            manager.getClass().getMethod("stopTethering", int.class).invoke(manager, 0);
+        } else if (state == 11) { // WIFI_AP_STATE_DISABLED
+            android.net.TetheringManager.TetheringRequest request =
+                new android.net.TetheringManager.TetheringRequest.Builder(0).build();
+            CompletableFuture<Void> started = new CompletableFuture<>();
+            manager.startTethering(request, Runnable::run, new android.net.TetheringManager.StartTetheringCallback() {
+                public void onTetheringStarted() { started.complete(null); }
+                public void onTetheringFailed(int error) {
+                    started.completeExceptionally(new IllegalStateException("Hotspot error " + error));
+                }
+            });
+            started.get(10, TimeUnit.SECONDS);
+        } else throw new IllegalStateException("Hotspot changing or unavailable");
+    }
+
+    private static void mobileData(Context ctx, String action) throws Exception {
+        SubscriptionManager subscriptions = ctx.getSystemService(SubscriptionManager.class);
+        int current = SubscriptionManager.getDefaultDataSubscriptionId();
+        if (subscriptions == null || subscriptions.getActiveSubscriptionInfo(current) == null) {
+            throw new IllegalStateException("No active default data SIM");
+        }
+        TelephonyManager phones = ctx.getSystemService(TelephonyManager.class);
+        TelephonyManager source = phones.createForSubscriptionId(current);
+        boolean enabled = source.isDataEnabled();
+        if (action.equals("action:data_toggle")) {
+            source.setDataEnabled(!enabled);
+            return;
+        }
+
+        int slot = action.equals("action:data_slot1") ? 0 : action.equals("action:data_slot2") ? 1 : -1;
+        if (slot >= 0) {
+            SubscriptionInfo chosen = subscriptions.getActiveSubscriptionInfoForSimSlotIndex(slot);
+            if (chosen == null || chosen.isOpportunistic()) throw new IllegalStateException("Data SIM unavailable");
+            if (chosen.getSubscriptionId() != current) selectDataSim(subscriptions, phones, chosen.getSubscriptionId(), enabled);
+            return;
+        }
+
+        // Android returns active subscriptions in SIM slot order.
+        List<SubscriptionInfo> active = subscriptions.getActiveSubscriptionInfoList();
+        if (active == null) return;
+        for (int i = 0; i < active.size(); i++) {
+            if (active.get(i).getSubscriptionId() != current) continue;
+            for (int offset = 1; offset < active.size(); offset++) {
+                SubscriptionInfo next = active.get((i + offset) % active.size());
+                if (next.isOpportunistic()) continue;
+                selectDataSim(subscriptions, phones, next.getSubscriptionId(), enabled);
+                return;
+            }
+            return;
+        }
+    }
+    private static void selectDataSim(SubscriptionManager subscriptions, TelephonyManager phones, int id, boolean enabled) throws Exception {
+        TelephonyManager destination = phones.createForSubscriptionId(id);
+        SubscriptionManager.class.getMethod("setDefaultDataSubscriptionId", int.class).invoke(subscriptions, id);
+        if (destination.isDataEnabled() != enabled) destination.setDataEnabled(enabled);
     }
     static void feedback()throws Exception{
         Helper.command("/system/bin/cmd","vibrator_manager","feedback","-d","PlusKey","4");
