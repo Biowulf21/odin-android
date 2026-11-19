@@ -17,6 +17,7 @@ import java.util.concurrent.*;
 
 /** Invoked only by the already-authorized shell helper, using shell attribution. */
 final class DeviceActions {
+    private static final String OPLUS_DATA_SLOT = "oplus_customize_multi_sim_network_primary_slot";
     private static Context context;
     private static CameraManager camera;
     private static String cameraId;
@@ -208,31 +209,42 @@ final class DeviceActions {
             return;
         }
 
+        String preference = Helper.command("/system/bin/settings", "get", "global", OPLUS_DATA_SLOT).trim();
+        int preferredSlot = preference.matches("[0-9]+") ? Integer.parseInt(preference) : -1;
         int slot = action.equals("action:data_slot1") ? 0 : action.equals("action:data_slot2") ? 1 : -1;
         if (slot >= 0) {
             SubscriptionInfo chosen = subscriptions.getActiveSubscriptionInfoForSimSlotIndex(slot);
             if (chosen == null || chosen.isOpportunistic()) throw new IllegalStateException("Data SIM unavailable");
-            if (chosen.getSubscriptionId() != current) selectDataSim(subscriptions, phones, chosen.getSubscriptionId(), enabled);
+            selectDataSim(subscriptions, phones, chosen, current, enabled, preferredSlot);
             return;
         }
 
         // Android returns active subscriptions in SIM slot order.
         List<SubscriptionInfo> active = subscriptions.getActiveSubscriptionInfoList();
         if (active == null) return;
+        int selected = current;
+        for (SubscriptionInfo sim : active) {
+            if (!sim.isOpportunistic() && sim.getSimSlotIndex() == preferredSlot) selected = sim.getSubscriptionId();
+        }
         for (int i = 0; i < active.size(); i++) {
-            if (active.get(i).getSubscriptionId() != current) continue;
+            if (active.get(i).getSubscriptionId() != selected) continue;
             for (int offset = 1; offset < active.size(); offset++) {
                 SubscriptionInfo next = active.get((i + offset) % active.size());
                 if (next.isOpportunistic()) continue;
-                selectDataSim(subscriptions, phones, next.getSubscriptionId(), enabled);
+                selectDataSim(subscriptions, phones, next, current, enabled, preferredSlot);
                 return;
             }
             return;
         }
     }
-    private static void selectDataSim(SubscriptionManager subscriptions, TelephonyManager phones, int id, boolean enabled) throws Exception {
+    private static void selectDataSim(SubscriptionManager subscriptions, TelephonyManager phones, SubscriptionInfo selected,
+            int current, boolean enabled, int preferredSlot) throws Exception {
+        int id = selected.getSubscriptionId();
         TelephonyManager destination = phones.createForSubscriptionId(id);
-        SubscriptionManager.class.getMethod("setDefaultDataSubId", int.class).invoke(subscriptions, id);
+        if (id != current) SubscriptionManager.class.getMethod("setDefaultDataSubId", int.class).invoke(subscriptions, id);
+        if (preferredSlot >= 0 && preferredSlot != selected.getSimSlotIndex()) {
+            Helper.command("/system/bin/settings", "put", "global", OPLUS_DATA_SLOT, String.valueOf(selected.getSimSlotIndex()));
+        }
         if (destination.isDataEnabled() != enabled) destination.setDataEnabled(enabled);
     }
     static void feedback()throws Exception{
