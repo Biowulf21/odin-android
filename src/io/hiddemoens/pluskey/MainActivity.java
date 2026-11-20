@@ -36,9 +36,12 @@ public final class MainActivity extends AppCompatActivity {
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private Mailbox mailbox;private WirelessController wireless;private SetupSheet setup;
-    private final TextView[] pressNames = new TextView[KeyPress.TRIPLE + 1];
-    private final ImageView[] pressIcons = new ImageView[KeyPress.TRIPLE + 1];
-    private final MaterialButton[] pressPreviews = new MaterialButton[KeyPress.TRIPLE + 1];
+    private final Map<Integer,TextView> pressNames = new LinkedHashMap<>();
+    private final Map<Integer,ImageView> pressIcons = new HashMap<>();
+    private final Map<Integer,MaterialButton> pressPreviews = new HashMap<>();
+    private LinearLayout customRows;
+    private androidx.appcompat.app.AlertDialog captureDialog;
+    private boolean helperReady;
     private View longPressSetupCard;
     private FrameLayout shelfPages;
     private NestedScrollView shelfScroll;
@@ -160,6 +163,10 @@ public final class MainActivity extends AppCompatActivity {
         addPressCard(second, KeyPress.TRIPLE, "Triple press", "Off", "● ● ●");
         addPressCard(second, KeyPress.LONG, "Long press", "Managed by OnePlus", "");
         Ui.equal(this, second);
+        customRows = Ui.column(this);
+        root.addView(customRows);
+        rebuildPatterns();
+        Ui.button(this,root,"Record pattern",false,v -> recordPattern());
         LinearLayout longPressSetup = Ui.card(this, root);
         longPressSetupCard = (View) longPressSetup.getParent();
         longPressSetupCard.setVisibility(View.GONE);
@@ -476,6 +483,29 @@ public final class MainActivity extends AppCompatActivity {
         return row;
     }
 
+    private CharSequence rhythmMarks(int gesture, int color) {
+        android.text.SpannableString marks = new android.text.SpannableString(GesturePatterns.label(gesture));
+        for (int index = 0; index < marks.length(); index++) {
+            android.graphics.drawable.Drawable symbol;
+            if (marks.charAt(index) == '—') {
+                symbol = getDrawable(R.drawable.ic_hold).mutate();
+                symbol.setBounds(0, 0, symbol.getIntrinsicWidth(), symbol.getIntrinsicHeight());
+            } else if (marks.charAt(index) == '●') {
+                android.graphics.drawable.GradientDrawable dot = new android.graphics.drawable.GradientDrawable();
+                dot.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+                dot.setColor(android.graphics.Color.WHITE);
+                dot.setBounds(0, 0, dp(10), dp(10));
+                symbol = dot;
+            } else {
+                continue;
+            }
+            symbol.setTint(color);
+            marks.setSpan(new android.text.style.ImageSpan(symbol, android.text.style.DynamicDrawableSpan.ALIGN_CENTER),
+                index, index + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        return marks;
+    }
+
     private void addPressCard(LinearLayout row, int gesture, String title, String unsetLabel, String rhythm) {
         LinearLayout card = Ui.card(this, row);
         card.setPadding(dp(12), dp(14), dp(12), dp(10));
@@ -491,33 +521,97 @@ public final class MainActivity extends AppCompatActivity {
         tile.setStrokeColor(0x16FFFFFF);
         tile.setStrokeWidth(dp(1));
         tile.setFocusable(true);
-        tile.setOnClickListener(v -> choose(gesture, title, unsetLabel));
+        tile.setOnClickListener(v -> choose(gesture, gesture > KeyPress.TRIPLE ? rhythm : title, unsetLabel));
         LinearLayout symbols = Ui.actions(this, card);
         TextView pattern = new TextView(this);
-        if (gesture == KeyPress.LONG) {
-            pattern.setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_hold, 0, 0, 0);
-            pattern.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(
-                Ui.color(this, androidx.appcompat.R.attr.colorPrimary)));
-        } else {
-            pattern.setText(rhythm);
-        }
         pattern.setTextColor(Ui.color(this, androidx.appcompat.R.attr.colorPrimary));
-        pattern.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        pattern.setText(rhythmMarks(gesture, pattern.getCurrentTextColor()));
+        pattern.setContentDescription(gesture <= KeyPress.TRIPLE ? title :
+                GesturePatterns.text(gesture).replace(".", "short ").replace("-", "long ").trim());
         symbols.addView(pattern, new LinearLayout.LayoutParams(0, -2, 1));
         ImageView icon = new ImageView(this);
         symbols.addView(icon, new LinearLayout.LayoutParams(dp(36), dp(36)));
-        pressIcons[gesture] = icon;
-        TextView gestureTitle = Ui.text(this, card, title, 21, false);
-        gestureTitle.setTypeface(null, Typeface.BOLD);
-        gestureTitle.setPadding(0, dp(12), 0, 0);
-        pressNames[gesture] = Ui.text(this, card, "", 17, true);
-        pressPreviews[gesture] = Ui.button(this, card, "Preview", false, v -> preview(gesture));
+        pressIcons.put(gesture, icon);
+        TextView actionName = Ui.text(this, card, "", 21, false);
+        actionName.setTypeface(null, Typeface.BOLD);
+        actionName.setPadding(0, dp(12), 0, 0);
+        actionName.setMinLines(2);
+        pressNames.put(gesture, actionName);
+        pressPreviews.put(gesture, Ui.button(this, card, "Preview", false, v -> preview(gesture)));
+    }
+    private void confirmRemove(int gesture) {
+            new MaterialAlertDialogBuilder(this).setTitle("Remove " + GesturePatterns.label(gesture) + "?").setNegativeButton("Cancel", null)
+                .setPositiveButton("Remove", (dialog, which) -> {
+                    try { mailbox.removePattern(gesture); rebuildPatterns(); showSelections(); }
+                    catch (IOException error) { toast(error.getMessage()); }
+                }).show();
+    }
+
+    private void rebuildPatterns() {
+        customRows.removeAllViews();
+        pressNames.keySet().removeIf(id -> id > KeyPress.TRIPLE);
+        pressIcons.keySet().removeIf(id -> id > KeyPress.TRIPLE);
+        pressPreviews.keySet().removeIf(id -> id > KeyPress.TRIPLE);
+        LinearLayout row = null;
+        for (int id : mailbox.patterns()) {
+            if (row == null || row.getChildCount() == 2) row = gestureRow(customRows);
+            addPressCard(row, id, GesturePatterns.label(id), "Off", GesturePatterns.label(id));
+            Ui.equal(this, row);
+        }
+        if (row != null && row.getChildCount() == 1) {
+            View tile = row.getChildAt(0);
+            LinearLayout.LayoutParams tileSize = (LinearLayout.LayoutParams) tile.getLayoutParams();
+            tileSize.height = LinearLayout.LayoutParams.WRAP_CONTENT;
+            tile.setLayoutParams(tileSize);
+            row.addView(new Space(this), new LinearLayout.LayoutParams(0, 1));
+            Ui.equal(this, row);
+        }
+    }
+
+    private void recordPattern() {
+        if (!helperReady) { toast("Start Plus Key before recording a pattern"); return; }
+        File dir = getExternalFilesDir(null);
+        if (dir == null) { toast("Pattern storage unavailable"); return; }
+        PatternCapture capture = new PatternCapture(dir);
+        final String token;
+        try { token = capture.start(); } catch (IOException error) { toast(error.getMessage()); return; }
+        LinearLayout body = Ui.column(this);
+        body.setPadding(dp(24), dp(6), dp(24), 0);
+        Ui.text(this, body,"Press Plus Key up to 8 times. Tap for a dot, hold for a dash. Actions are paused while recording.",16,true);
+        TextView sequence = Ui.text(this, body,"Waiting for Plus Key…",24,false);
+        sequence.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        androidx.appcompat.app.AlertDialog dialog = new MaterialAlertDialogBuilder(this).setTitle("Record pattern")
+            .setView(body).setPositiveButton("Save",null).setNegativeButton("Cancel",null).create();
+        captureDialog = dialog;
+        Runnable update = () -> {
+            if (!dialog.isShowing()) return;
+            try {
+                String value = capture.read(token);
+                boolean valid = value.matches("[.-]{1,8}");
+                sequence.setText(valid ? rhythmMarks(GesturePatterns.id(value), sequence.getCurrentTextColor()) : value.isEmpty() ? "Waiting for Plus Key…" : "Too many presses. Cancel and try again.");
+                dialog.getButton(-1).setEnabled(valid);
+            } catch (IOException error) { dialog.getButton(-1).setEnabled(false); }
+        };
+        FileObserver observer = new FileObserver(dir, FileObserver.CLOSE_WRITE) {
+            public void onEvent(int event,String path) { if (PatternCapture.filename(token).equals(path)) handler.post(update); }
+        };
+        Runnable expire = dialog::dismiss;
+        dialog.setOnDismissListener(ignored -> { capture.stop(token); observer.stopWatching(); handler.removeCallbacks(expire); captureDialog = null; });
+        observer.startWatching(); dialog.show(); update.run(); handler.postDelayed(expire, PatternCapture.TIMEOUT);
+        dialog.getButton(-1).setOnClickListener(view -> {
+            try {
+                String value = capture.read(token);
+                if (!value.matches("[.-]{1,8}")) return;
+                int id = GesturePatterns.id(value);
+                mailbox.addPattern(id); dialog.dismiss(); rebuildPatterns(); showSelections(); choose(id,GesturePatterns.label(id),"Off");
+            } catch (IOException | IllegalArgumentException error) { toast(error.getMessage()); }
+        });
     }
 
     private void choose(int gesture, String title, String unsetLabel) {
         try {
             String current = mailbox.selected(gesture);
-            Runnable timing = gesture == KeyPress.DOUBLE || gesture == KeyPress.TRIPLE ? this::showClickInterval : null;
+            Runnable timing = GesturePatterns.text(gesture).length() > 1 ? this::showClickInterval : null;
             new ChoicePicker(this, choice -> {
                 if (choice.target != null && choice.target.startsWith("configure:")) {
                     ComponentName component = ComponentName.unflattenFromString(choice.target.substring("configure:".length()));
@@ -529,8 +623,15 @@ public final class MainActivity extends AppCompatActivity {
                         configuringPackage = null;
                         toast("Shortcut setup unavailable");
                     }
+                } else if (GesturePatterns.text(gesture).endsWith("-") && choice.target != null && ChoicePicker.canHold(this, choice.target)) {
+                    String normal = choice.target.startsWith("tile:") ? "Click once" : "Toggle";
+                    new MaterialAlertDialogBuilder(this).setTitle(choice.label)
+                        .setMessage("While held is available for patterns ending in a long press. Starts when the final hold is recognized and stops when you release Plus Key.")
+                        .setNegativeButton(normal,(dialog,which) -> saveChoice(gesture,choice))
+                        .setPositiveButton("While held",(dialog,which) -> saveChoice(gesture,new Targets.Choice(choice.label + " · While held","hold:" + choice.target))).show();
                 } else saveChoice(gesture, choice);
-            }).show(title, unsetLabel, current, timing);
+            }).show(title, unsetLabel, current != null && current.startsWith("hold:") ? current.substring(5) : current, timing,
+                    gesture > KeyPress.TRIPLE ? () -> confirmRemove(gesture) : null);
         } catch (IOException error) { toast("Could not read selection"); }
     }
     private void saveChoice(int gesture, Targets.Choice choice) {
@@ -538,15 +639,22 @@ public final class MainActivity extends AppCompatActivity {
             mailbox.select(gesture, choice.target);
             if (choice.target != null) Targets.remember(this, choice);
             showSelections();
-        } catch (IOException error) { toast("Could not save selection"); }
+            if ("action:record".equals(choice.target) || "hold:action:record".equals(choice.target) ||
+                    choice.target != null && choice.target.startsWith("media:") && choice.target.contains("action:record")) {
+                ArrayList<String> missing = new ArrayList<>();
+                for (String permission : RecordingActivity.requiredPermissions())
+                    if (checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) missing.add(permission);
+                if (!missing.isEmpty()) requestPermissions(missing.toArray(new String[0]), 5);
+            }
+        } catch (IOException | IllegalArgumentException error) { toast(error.getMessage()); }
     }
     private String systemAction(){try{return Settings.System.getString(getContentResolver(),Helper.ONEPLUS_ACTION_SETTING);}catch(Exception error){return null;}}
     private void showSelections(){
         try {
-            for (int gesture = KeyPress.SHORT; gesture <= KeyPress.TRIPLE; gesture++) {
+            for (int gesture : pressNames.keySet()) {
                 String target = mailbox.selected(gesture);
                 showSelection(gesture, target);
-                MaterialButton preview = pressPreviews[gesture];
+                MaterialButton preview = pressPreviews.get(gesture);
                 if (gesture == KeyPress.LONG) {
                     String nativeAction = systemAction();
                     boolean blocked = target != null && !"nothing".equals(nativeAction);
@@ -563,10 +671,21 @@ public final class MainActivity extends AppCompatActivity {
         } catch (IOException error) {toast("Choose an action again");}
     }
     private void showSelection(int gesture, String target){
-        TextView name = pressNames[gesture];
-        ImageView icon = pressIcons[gesture];
+        TextView name = pressNames.get(gesture);
+        ImageView icon = pressIcons.get(gesture);
         name.setText(target == null && gesture != KeyPress.LONG ? "Off" : Targets.label(this, target));
         icon.setImageTintList(null);
+        String action = target != null && target.startsWith("hold:") ? target.substring(5) : target;
+        if (Options.isTile(action)) {
+            try {
+                ComponentName component = ComponentName.unflattenFromString(action.substring(5));
+                ServiceInfo service = getPackageManager().getServiceInfo(component, 0);
+                icon.setImageDrawable(service.loadIcon(getPackageManager()).mutate());
+                if (service.icon != 0) icon.setImageTintList(android.content.res.ColorStateList.valueOf(
+                    Ui.color(this, androidx.appcompat.R.attr.colorPrimary)));
+                return;
+            } catch (PackageManager.NameNotFoundException ignored) { }
+        }
         try{
             Intent[] intents=target==null?new Intent[0]:Targets.intents(target);
             if(intents.length>0){icon.setImageDrawable(getPackageManager().getActivityIcon(intents[intents.length-1]));return;}
@@ -575,14 +694,15 @@ public final class MainActivity extends AppCompatActivity {
         icon.setImageTintList(android.content.res.ColorStateList.valueOf(Ui.color(this,androidx.appcompat.R.attr.colorPrimary)));
     }
     private void preview(int gesture){
-        ImageView icon = pressIcons[gesture];
+        ImageView icon = pressIcons.get(gesture);
         if (android.animation.ValueAnimator.areAnimatorsEnabled()) {
             icon.setScaleX(.8f);
             icon.setScaleY(.8f);
             icon.animate().scaleX(1f).scaleY(1f).setDuration(180).start();
         }
         try{String target=mailbox.selected(gesture);if(target==null)return;
-            if(target.startsWith("action:") || Options.mediaBranches(target) != null){String current=mailbox.readStatus(System.currentTimeMillis());if(current!=null&&current.startsWith("Listening|")){mailbox.requestPreview(gesture);return;}toast("Start your button first to preview this action");return;}
+            if(target.startsWith("hold:")){toast("Hold the physical Plus Key to test this action");return;}
+            if(target.startsWith("tile:") || target.startsWith("action:") || Options.mediaBranches(target) != null){String current=mailbox.readStatus(System.currentTimeMillis());if(current!=null&&current.startsWith("Listening|")){mailbox.requestPreview(gesture);return;}toast("Start your button first to preview this action");return;}
             startActivities(Targets.intents(target));
         }catch(Exception error){toast("Action unavailable. Choose another.");}
     }
@@ -646,6 +766,7 @@ public final class MainActivity extends AppCompatActivity {
     private void renderStatus(String current, boolean versionOkay) {
         boolean busy = wireless.busy.get();
         boolean ready = current != null && current.startsWith("Listening|") && versionOkay;
+        helperReady = ready;
         boolean paired = wireless.paired();
         boolean configured = paired || ShizukuConnection.authorized();
         progress.setVisibility(busy ? View.VISIBLE : View.GONE);
@@ -696,13 +817,14 @@ public final class MainActivity extends AppCompatActivity {
     }}
     private void toast(String message){Toast.makeText(this,message,Toast.LENGTH_LONG).show();}
     private int dp(int value){return Ui.dp(this,value);}
-    protected void onResume(){super.onResume();resumed=true;resumeGeneration++;watchStatus();handler.post(poll);if(updates!=null){updates.resumed();updates.check(false);}showSelections();
+    protected void onResume(){super.onResume();resumed=true;resumeGeneration++;watchStatus();handler.post(poll);if(updates!=null){updates.resumed();updates.check(false);}rebuildPatterns();showSelections();
         boolean pendingAutomatic=wireless.prefs().getBoolean("automatic_requested",false)&&setup.wifiDebugging();
         if(!ShizukuConnection.authorized()&&(!autoAttempt||pendingAutomatic)&&wireless.canUseWireless()&&!wireless.prefs().getBoolean("user_stopped",false)){
             autoAttempt=true;try{String current=mailbox.readStatus(System.currentTimeMillis());if(current==null||!current.startsWith("Listening|")||!Helper.VERSION.equals(mailbox.runningVersion())||wireless.prefs().getBoolean("automatic_requested",false)||wireless.automatic())wireless.start();}catch(IOException ignored){}
         }
     }
     protected void onPause(){
+        if (captureDialog != null) captureDialog.dismiss();
         resumed=false;
         if (statusObserver != null) {
             statusObserver.stopWatching();
