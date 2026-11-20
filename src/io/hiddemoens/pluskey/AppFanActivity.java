@@ -2,6 +2,7 @@ package io.hiddemoens.pluskey;
 
 import android.animation.ValueAnimator;
 import android.app.Activity;
+import android.app.KeyguardManager;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Intent;
@@ -27,6 +28,7 @@ import android.widget.Toast;
 public final class AppFanActivity extends Activity {
     private FrameLayout stage;
     private boolean placed, closing;
+    private KeyguardManager.KeyguardDismissCallback unlockRequest;
     private static final android.util.LruCache<String, Integer> ROUND_ICON_IDS = new android.util.LruCache<>(48);
     private float keyX, keyY;
 
@@ -42,11 +44,12 @@ public final class AppFanActivity extends Activity {
 
     @Override protected void onStop() {
         super.onStop();
-        if (!isChangingConfigurations()) finish();
+        if (!isChangingConfigurations() && unlockRequest == null) finish();
     }
 
     private void collapse() {
         if (closing) return;
+        unlockRequest = null;
         closing = true;
         if (!placed || !ValueAnimator.areAnimatorsEnabled()) { finish(); return; }
         for (int i = 0; i < stage.getChildCount(); i++) {
@@ -66,7 +69,6 @@ public final class AppFanActivity extends Activity {
         super.onCreate(state);
         getWindow().setDecorFitsSystemWindows(false);
         stage = new FrameLayout(this);
-        stage.setBackgroundColor(0x66000000);
         stage.setOnClickListener(v -> collapse());
         setContentView(stage);
         showFan(getIntent());
@@ -77,6 +79,11 @@ public final class AppFanActivity extends Activity {
         if (apps == null) { finish(); return; }
         for (int i = 0; i < stage.getChildCount(); i++) stage.getChildAt(i).animate().cancel();
         stage.removeAllViews();
+        unlockRequest = null;
+        boolean locked = getSystemService(KeyguardManager.class).isKeyguardLocked();
+        if (locked) getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER);
+        else getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER);
+        stage.setBackgroundColor(locked ? android.graphics.Color.TRANSPARENT : 0x66000000);
         placed = false;
         closing = false;
         int size = Ui.dp(this, 52);
@@ -93,14 +100,7 @@ public final class AppFanActivity extends Activity {
                 button.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
                 button.setImageDrawable(launcherIcon(info));
                 button.setContentDescription(info.loadLabel(getPackageManager()));
-                button.setOnClickListener(v -> {
-                    try {
-                        startActivity(Intent.makeMainActivity(component).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-                    } catch (ActivityNotFoundException | SecurityException e) {
-                        Toast.makeText(this, "App unavailable", Toast.LENGTH_SHORT).show();
-                    }
-                    finish();
-                });
+                button.setOnClickListener(v -> selectApp(component));
                 button.setAlpha(0f);
                 stage.addView(button, size, size);
             } catch (PackageManager.NameNotFoundException ignored) { }
@@ -117,6 +117,39 @@ public final class AppFanActivity extends Activity {
                 return true;
             }
         });
+    }
+
+    private void selectApp(ComponentName component) {
+        if (closing || unlockRequest != null) return;
+        KeyguardManager keyguard = getSystemService(KeyguardManager.class);
+        if (!keyguard.isKeyguardLocked()) {
+            launchApp(component);
+            return;
+        }
+        unlockRequest = new KeyguardManager.KeyguardDismissCallback() {
+            @Override public void onDismissSucceeded() {
+                if (unlockRequest != this) return;
+                unlockRequest = null;
+                if (!isFinishing() && !isDestroyed() && !keyguard.isDeviceLocked()) launchApp(component);
+            }
+
+            @Override public void onDismissCancelled() { clearRequest(); }
+            @Override public void onDismissError() { clearRequest(); }
+
+            private void clearRequest() {
+                if (unlockRequest == this) unlockRequest = null;
+            }
+        };
+        keyguard.requestDismissKeyguard(this, unlockRequest);
+    }
+
+    private void launchApp(ComponentName component) {
+        try {
+            startActivity(Intent.makeMainActivity(component).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        } catch (ActivityNotFoundException | SecurityException e) {
+            Toast.makeText(this, "App unavailable", Toast.LENGTH_SHORT).show();
+        }
+        finish();
     }
 
     private static final ViewOutlineProvider ROUND_OUTLINE = new ViewOutlineProvider() {

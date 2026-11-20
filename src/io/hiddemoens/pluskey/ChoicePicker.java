@@ -288,18 +288,7 @@ final class ChoicePicker {
         visible.clear();
         saveFan.setVisibility(choosingFan ? View.VISIBLE : View.GONE);
         if (choosingFan) {
-            String query = search.getText().toString().trim().toLowerCase(Locale.ROOT);
-            Set<String> available = new HashSet<>();
-            if (apps != null) for (AppGroup group : apps) {
-                for (Entry entry : group.children) {
-                    if (!Options.validComponent(entry.choice.target)) continue;
-                    available.add(entry.choice.target);
-                    if (entry.choice.label.toLowerCase(Locale.ROOT).contains(query) ||
-                        group.info.packageName.toLowerCase(Locale.ROOT).contains(query))
-                        visible.add(new Entry(entry.choice, entry.app));
-                }
-            }
-            if (apps != null) fanSelection.retainAll(available);
+            if (apps != null) addFanRows();
             saveFan.setText("Save " + fanSelection.size() + " apps");
             saveFan.setEnabled(fanSelection.size() >= 2);
         } else if (!browsingApps) {
@@ -333,6 +322,31 @@ final class ChoicePicker {
         empty.setVisibility(visible.isEmpty() ? View.VISIBLE : View.GONE);
         list.setVisibility(visible.isEmpty() ? View.GONE : View.VISIBLE);
         rows.notifyDataSetChanged();
+    }
+
+    private void addFanRows() {
+        String query = search.getText().toString().trim().toLowerCase(Locale.ROOT);
+        Map<String, Entry> picked = new HashMap<>();
+        List<Entry> remaining = new ArrayList<>();
+        for (AppGroup group : apps) {
+            boolean packageMatches = group.info.packageName.toLowerCase(Locale.ROOT).contains(query);
+            for (Entry entry : group.children) {
+                String target = entry.choice.target;
+                if (!Options.validComponent(target)) continue;
+                if (fanSelection.contains(target)) {
+                    picked.put(target, new Entry(entry.choice, entry.app));
+                } else if (packageMatches || entry.choice.label.toLowerCase(Locale.ROOT).contains(query)) {
+                    remaining.add(new Entry(entry.choice, entry.app));
+                }
+            }
+        }
+        fanSelection.retainAll(picked.keySet());
+        if (!fanSelection.isEmpty()) {
+            visible.add(new Heading("Selected apps"));
+            for (String target : fanSelection) visible.add(picked.get(target));
+            if (!remaining.isEmpty()) visible.add(new Heading("Available apps"));
+        }
+        visible.addAll(remaining);
     }
 
     private static String actionCategory(String target) {

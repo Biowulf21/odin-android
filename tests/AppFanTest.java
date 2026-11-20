@@ -16,7 +16,10 @@ public final class AppFanTest {
                 fan + ",action:torch", fan + ",bad", fan + ",a.b/.C,c.d/.E,e.f/.G,g.h/.I,i.j/.K"}) {
             if (Options.validTarget(invalid)) throw new AssertionError(invalid);
         }
-        if (Policy.mayRunWhileLocked(fan)) throw new AssertionError("Fan requires unlock");
+        if (!Policy.mayRunWhileLocked(fan) || !Policy.shouldWakeScreen(fan))
+            throw new AssertionError("Fan must wake and display while locked");
+        if (Policy.mayRunWhileLocked(a) || Policy.shouldWakeScreen("fan:" + a))
+            throw new AssertionError("Only valid fans gain lock-screen access");
         System.out.println("App fan checks passed");
     }
 }

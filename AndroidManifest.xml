@@ -1,4 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="io.hiddemoens.pluskey" android:versionCode="29" android:versionName="1.9.4">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="io.hiddemoens.pluskey" android:versionCode="30" android:versionName="1.9.5">
     <uses-sdk android:minSdkVersion="30" android:targetSdkVersion="37" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
@@ -31,7 +31,7 @@
         <service android:name=".PairingService" android:exported="false" android:foregroundServiceType="connectedDevice" />
         <provider android:name=".DiagnosticsProvider" android:authorities="io.hiddemoens.pluskey.diagnostics" android:exported="true" android:permission="android.permission.DUMP" />
         <activity android:name=".AppFanActivity" android:exported="true" android:permission="android.permission.DUMP"
-            android:excludeFromRecents="true" android:launchMode="singleInstance" android:taskAffinity="io.hiddemoens.pluskey.fan"
+            android:excludeFromRecents="true" android:showWhenLocked="true" android:turnScreenOn="true" android:launchMode="singleInstance" android:taskAffinity="io.hiddemoens.pluskey.fan"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <activity android:name=".ConfiguredShortcut" android:exported="true" android:permission="android.permission.DUMP"
             android:excludeFromRecents="true" android:taskAffinity="" android:theme="@android:style/Theme.NoDisplay" />
