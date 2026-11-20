@@ -31,6 +31,9 @@ public final class Helper {
     private Thread controlThread;
     private final File mailboxDir = new File("/sdcard/Android/data/io.hiddemoens.pluskey/files");
     private final Mailbox mailbox = new Mailbox(mailboxDir);
+    private final PatternCapture capture = new PatternCapture(mailboxDir);
+    private final java.util.concurrent.atomic.AtomicLong releases = new java.util.concurrent.atomic.AtomicLong();
+    private String heldTarget;
     private final BlockingQueue<Boolean> mailboxChanged = new ArrayBlockingQueue<>(1);
 
     private Helper() {
@@ -39,9 +42,10 @@ public final class Helper {
 
     private void enqueue(int gesture, boolean preview) {
         if (!running) return;
+        long generation = releases.get();
         try {
             actions.execute(() -> {
-                if (running) launch(gesture, preview);
+                if (running && capture.active() == null) launch(gesture, preview, generation);
             });
         } catch (RejectedExecutionException ignored) { }
     }
@@ -97,7 +101,7 @@ public final class Helper {
             if (reader != null) reader.destroy();
             helper.server.close();
             try{helper.publishStatus("Stopped|" + helper.launches + "|Helper stopped", true);}
-            finally{DeviceActions.shutdown();System.exit(0);}
+            finally{helper.endHold();DeviceActions.shutdown();System.exit(0);}
         }
     }
 
@@ -113,7 +117,7 @@ public final class Helper {
         FileObserver observer = new FileObserver(mailboxDir,
             FileObserver.CREATE | FileObserver.MOVED_TO | FileObserver.CLOSE_WRITE) {
             @Override public void onEvent(int event, String path) {
-                if (Mailbox.STOP_REQUEST.equals(path) || Mailbox.PREVIEW_REQUEST.equals(path)
+                if (("tile-query".equals(path) && event == FileObserver.CLOSE_WRITE) || Mailbox.STOP_REQUEST.equals(path) || Mailbox.PREVIEW_REQUEST.equals(path)
                     || Mailbox.STATUS_REQUEST.equals(path)) {
                     mailboxChanged.offer(true);
                 }
@@ -122,10 +126,23 @@ public final class Helper {
         try {
             observer.startWatching();
             String published = null;
+            String answered = null;
             while (running) {
                 if (mailbox.stopRequested()) {
                     stop();
                     break;
+                }
+                File query = new File(mailboxDir, "tile-query");
+                if (query.isFile() && query.length() <= 40) {
+                    try (BufferedReader in = new BufferedReader(new FileReader(query))) {
+                        String token = in.readLine();
+                        if (token != null && token.matches("[0-9a-f-]{36}") && !token.equals(answered)) {
+                            String specs = command("/system/bin/settings","get","secure","sysui_qs_tiles").trim();
+                            File next = new File(mailboxDir, "tile-reply.next");
+                            java.nio.file.Files.write(next.toPath(), java.util.Arrays.asList(token,specs));
+                            if (next.renameTo(new File(mailboxDir,"tile-reply"))) answered = token;
+                        }
+                    } catch (Exception unavailable) { System.err.println("Quick Settings list unavailable"); }
                 }
                 int preview = mailbox.consumePreview();
                 if (preview != 0) enqueue(preview, true);
@@ -175,7 +192,8 @@ public final class Helper {
                 return thread;
             });
             gestureTimer.setRemoveOnCancelPolicy(true);
-            KeyPress key = new KeyPress(gestureTimer, gesture -> enqueue(gesture, false), mailbox::activeClickInterval);
+            KeyPress key = new KeyPress(gestureTimer, gesture -> enqueue(gesture, false), mailbox::activeGestures,
+                mailbox::clickInterval, this::released, capture::append, () -> capture.active() != null);
             try (BufferedReader input = new BufferedReader(new InputStreamReader(reader.getInputStream()))) {
                 String line;
                 while (running && (line = input.readLine()) != null) {
@@ -183,7 +201,7 @@ public final class Helper {
                     if(gesture!=0)enqueue(gesture, false);
                 }
             }
-            finally { gestureTimer.shutdownNow(); }
+            finally { key.reset(); gestureTimer.shutdownNow(); released(); }
             if (running) throw new IOException("Input reader stopped");
         } catch (Exception e) {
             if (running) {
@@ -229,17 +247,49 @@ public final class Helper {
         command("/system/bin/input", "keyevent", "KEYCODE_WAKEUP");
     }
 
-    private void launch(int gesture, boolean preview) {
+    private void released() {
+        releases.incrementAndGet();
+        try { actions.execute(this::endHold); } catch (RejectedExecutionException ignored) { }
+    }
+
+    private synchronized void endHold() {
+        String owned = heldTarget;
+        heldTarget = null;
+        if (owned == null) return;
+        try {
+            if (owned.startsWith("tile:")) QuickTile.end(owned); else DeviceActions.endHold(owned);
+            last = "Held action finished";
+        } catch (Exception error) { recordLaunchFailure(error); }
+        mailboxChanged.offer(true);
+    }
+
+    private synchronized void startHold(String target, long generation) throws Exception {
+        if (!running || releases.get() != generation) return;
+        boolean owned = target.startsWith("tile:") ? QuickTile.begin(target) : DeviceActions.beginHold(target);
+        if (owned) heldTarget = target;
+        last = owned ? "Held action started" : "Already active; leaving unchanged";
+        if (owned) launches++;
+        if (!running || releases.get() != generation) endHold();
+    }
+
+    private void launch(int gesture, boolean preview, long generation) {
         try {
             String target = mailbox.selected(gesture);
             if (gesture != KeyPress.SHORT && target == null) return;
-            if (gesture == KeyPress.LONG && !customLongPressEnabled()) {
+            if (GesturePatterns.text(gesture).contains("-") && !customLongPressEnabled()) {
                 last = "Long press needs OnePlus action set to Do nothing";
                 return;
             }
             if (target == null) throw new IOException("No app selected; open Plus Key and choose an app");
             if (!preview && pendingUnlock != null) pendingUnlock.finish();
             String assignment = target;
+            if (target.startsWith("hold:")) {
+                String action = target.substring(5);
+                if (preview) { last = "Use the physical button to test a held action"; return; }
+                if (Policy.mayRunWhileLocked(action) || isAwakeAndUnlocked()) startHold(action, generation);
+                else last = "Unlock first to use this held action";
+                return;
+            }
             String[] branches = Options.mediaBranches(target);
             if (branches != null) target = branches[DeviceActions.mediaPlaying() ? 0 : 1];
             if ((!preview && Policy.mayRunWhileLocked(target)) || isAwakeAndUnlocked()) {
@@ -319,7 +369,7 @@ public final class Helper {
                     last = "Skipped: action changed while waiting for unlock";
                 } else if (!isAwakeAndUnlocked()) {
                     return;
-                } else if (gesture == KeyPress.LONG && !customLongPressEnabled()) {
+                } else if (GesturePatterns.text(gesture).contains("-") && !customLongPressEnabled()) {
                     last = "Long press needs OnePlus action set to Do nothing";
                 } else if (SystemClock.elapsedRealtime() >= deadline) {
                     last = "Skipped: unlock timed out";
@@ -336,7 +386,8 @@ public final class Helper {
 
     private void runTarget(String target) throws Exception {
         if (!running) return;
-        if (target.startsWith("action:")) DeviceActions.run(target);
+        if (target.startsWith("tile:")) QuickTile.click(target);
+        else if (target.startsWith("action:")) DeviceActions.run(target);
         else for (android.content.Intent intent : Targets.intents(target)) {
             if (target.startsWith("voice:")) intent.putExtra(android.speech.RecognizerIntent.EXTRA_SECURE, !isAwakeAndUnlocked());
             String result = command("/system/bin/am", "start", "--user", "0",

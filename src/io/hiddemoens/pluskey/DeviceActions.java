@@ -21,7 +21,10 @@ final class DeviceActions {
     private static Context context;
     private static CameraManager camera;
     private static String cameraId;
-    private static volatile boolean torch;
+    private static final LightState light = new LightState();
+
+    private static final Binder recordingClient = new Binder();
+    private static String heldRecording;
     private static HandlerThread cameraThread;
     private static synchronized Context context()throws Exception{
         if(context==null){
@@ -86,9 +89,127 @@ final class DeviceActions {
         return context().getSystemService(AudioManager.class).isMusicActive();
     }
 
+    static synchronized boolean beginHold(String target) {
+        try {
+            if ("action:record".equals(target)) {
+                if (heldRecording != null) return false;
+                heldRecording = recording(true);
+                return heldRecording != null;
+            }
+            if (!"action:torch".equals(target)) return false;
+            prepareLight(context());
+            synchronized (light) {
+                if (!light.canHold()) return false;
+                camera.setTorchMode(cameraId, true);
+                light.requested(true, true);
+                return true;
+            }
+        } catch (Exception error) {
+            System.err.println("Cannot start hold: " + error.getMessage());
+            return false;
+        }
+    }
+
+    static synchronized void endHold(String target) {
+        try {
+            if ("action:record".equals(target) && heldRecording != null) {
+                recordingCommand("stop", heldRecording, null);
+                heldRecording = null;
+            } else if ("action:torch".equals(target)) {
+                synchronized (light) {
+                    if (!light.held) return;
+                    camera.setTorchMode(cameraId, false);
+                    light.requested(false, false);
+                }
+            }
+        } catch (Exception error) { System.err.println("Cannot end hold: " + error.getMessage()); }
+    }
+
+    private static Bundle recordingCommand(String command, String token, Bundle extras) throws Exception {
+        Class<?> managerType = Class.forName("android.app.IActivityManager");
+        Object manager = android.app.ActivityManager.class.getMethod("getService").invoke(null);
+        Binder handle = new Binder();
+        String authority = RecordingProvider.AUTHORITY;
+        Object holder = managerType.getMethod("getContentProviderExternal", String.class, int.class, IBinder.class, String.class)
+            .invoke(manager, authority, 0, handle, "PlusKey");
+        if (holder == null) throw new IllegalStateException("Recorder unavailable");
+        try {
+            Object provider = holder.getClass().getField("provider").get(holder);
+            Class<?> providerType = Class.forName("android.content.IContentProvider");
+            String caller = android.os.Process.myUid() == 2000 ? "com.android.shell" : "root";
+            Bundle result;
+            if (Build.VERSION.SDK_INT >= 31) {
+                android.content.AttributionSource attribution = new android.content.AttributionSource.Builder(android.os.Process.myUid()).setPackageName(caller).build();
+                result = (Bundle) providerType.getMethod("call", android.content.AttributionSource.class, String.class, String.class, String.class, Bundle.class)
+                    .invoke(provider, attribution, authority, command, token, extras);
+            } else {
+                result = (Bundle) providerType.getMethod("call", String.class, String.class, String.class, String.class, String.class, Bundle.class)
+                    .invoke(provider, caller, null, authority, command, token, extras);
+            }
+            if (result == null) throw new IllegalStateException("Recorder unavailable");
+            return result;
+        } catch (java.lang.reflect.InvocationTargetException error) {
+            throw new IllegalStateException(error.getCause().getMessage(), error.getCause());
+        } finally {
+            managerType.getMethod("removeContentProviderExternalAsUser", String.class, IBinder.class, int.class).invoke(manager, authority, handle, 0);
+        }
+    }
+
+    private static String recording(boolean hold) throws Exception {
+        String token = java.util.UUID.randomUUID().toString();
+        Bundle extras = new Bundle();
+        extras.putBinder("helper", recordingClient);
+        boolean reserved = false;
+        boolean started = false;
+        try {
+            String status = recordingCommand(hold ? "hold" : "toggle", token, extras).getString("status");
+            if ("busy".equals(status) || "stopped".equals(status)) return null;
+            reserved = "reserved".equals(status);
+            if (!reserved || !isAwakeAndUnlocked()) throw new IllegalStateException("Unlock phone to record");
+            String result = Helper.command("/system/bin/am", "start", "--user", "0", "-f", "0x18000000", "-n",
+                "io.hiddemoens.pluskey/.RecordingActivity", "--es", "session", token);
+            if (result.contains("Error") || result.contains("Exception")) throw new IllegalStateException("Cannot open recording window");
+            started = recordingCommand("await", token, null).getBoolean("started");
+            if (!started) throw new IllegalStateException("Microphone recording did not start");
+            return token;
+        } finally {
+            if (reserved && !started) recordingCommand("stop", token, null);
+        }
+    }
+
+    private static void prepareLight(Context ctx) throws Exception {
+        if (camera != null) return;
+        CameraManager manager = ctx.getSystemService(CameraManager.class);
+        for (String id : manager.getCameraIdList()) {
+            CameraCharacteristics info = manager.getCameraCharacteristics(id);
+            if (Boolean.TRUE.equals(info.get(CameraCharacteristics.FLASH_INFO_AVAILABLE))) {
+                cameraId = id;
+                if (Integer.valueOf(CameraCharacteristics.LENS_FACING_BACK).equals(info.get(CameraCharacteristics.LENS_FACING))) break;
+            }
+        }
+        if (cameraId == null) throw new IllegalStateException("No flashlight available");
+        CountDownLatch initial = new CountDownLatch(1);
+        cameraThread = new HandlerThread("PlusKey-light");
+        cameraThread.start();
+        try {
+            manager.registerTorchCallback(new CameraManager.TorchCallback() {
+                @Override public void onTorchModeChanged(String id, boolean enabled) { update(id, enabled); }
+                @Override public void onTorchModeUnavailable(String id) { update(id, null); }
+                private void update(String id, Boolean enabled) {
+                    if (!id.equals(cameraId)) return;
+                    synchronized (light) { light.observed(enabled); }
+                    initial.countDown();
+                }
+            }, new Handler(cameraThread.getLooper()));
+        } catch (RuntimeException error) { cameraThread.quitSafely(); throw error; }
+        camera = manager;
+        initial.await(1, TimeUnit.SECONDS);
+    }
+
     static synchronized void run(String action)throws Exception{
         String code=null;
         switch(action){
+            case "action:record": recording(false); return;
             case "action:previous_app":
                 previousApp(context());
                 return;
@@ -127,23 +248,18 @@ final class DeviceActions {
                 return;
         }
         if(action.equals("action:torch") || action.equals("action:pause_torch")){
-            if(camera==null){
-                camera=(CameraManager)ctx.getSystemService(Context.CAMERA_SERVICE);
-                for(String id:camera.getCameraIdList()){
-                    CameraCharacteristics info=camera.getCameraCharacteristics(id);
-                    if(Boolean.TRUE.equals(info.get(CameraCharacteristics.FLASH_INFO_AVAILABLE))){cameraId=id;if(Integer.valueOf(CameraCharacteristics.LENS_FACING_BACK).equals(info.get(CameraCharacteristics.LENS_FACING)))break;}
+            prepareLight(ctx);
+            synchronized (light) {
+                if (light.enabled == null || light.changing()) throw new IllegalStateException("Flashlight unavailable or changing");
+                if (action.equals("action:pause_torch") && !light.enabled && mediaPlaying()) {
+                    Helper.command("/system/bin/input", "keyevent", "KEYCODE_MEDIA_PAUSE");
+                    return;
                 }
-                if(cameraId==null)throw new IllegalStateException("No flashlight available");
-                CountDownLatch initial=new CountDownLatch(1);
-                cameraThread=new HandlerThread("PlusKey-light");cameraThread.start();
-                camera.registerTorchCallback(new CameraManager.TorchCallback(){public void onTorchModeChanged(String id,boolean enabled){if(id.equals(cameraId)){torch=enabled;initial.countDown();}}},new Handler(cameraThread.getLooper()));
-                initial.await(1,TimeUnit.SECONDS);
+                boolean desired = !light.enabled;
+                camera.setTorchMode(cameraId, desired);
+                light.requested(desired, false);
             }
-            if (action.equals("action:pause_torch") && !torch && mediaPlaying()) {
-                Helper.command("/system/bin/input", "keyevent", "KEYCODE_MEDIA_PAUSE");
-                return;
-            }
-            boolean desired=!torch;camera.setTorchMode(cameraId,desired);torch=desired;return;
+            return;
         }
         AudioManager audio=(AudioManager)ctx.getSystemService(Context.AUDIO_SERVICE);
         int next=Options.ringerMode(action,audio.getRingerMode());
@@ -250,5 +366,9 @@ final class DeviceActions {
     static void feedback()throws Exception{
         Helper.command("/system/bin/cmd","vibrator_manager","feedback","-d","PlusKey","4");
     }
-    static synchronized void shutdown(){if(cameraThread!=null)cameraThread.quitSafely();}
+    static synchronized void shutdown(){
+        endHold("action:record");
+        endHold("action:torch");
+        if(cameraThread!=null)cameraThread.quitSafely();
+    }
 }

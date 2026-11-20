@@ -3,6 +3,18 @@ import java.io.File;
 import java.nio.file.Files;
 public final class OptionsTest {
     public static void main(String[] args) throws Exception {
+        for (String target : new String[]{"action:torch", "action:record", "tile:com.example.app/.Toggle",
+                "tile:com.example.app/com.example.app.Tiles$Network", "tile:oplus/.Tile"}) {
+            CoreTest.check(Options.validTarget(target), "accept target: " + target);
+            CoreTest.check(Options.canHold(target) && Options.validTarget("hold:" + target), "accept hold: " + target);
+        }
+        for (String target : new String[]{null, "action:silent", "com.example.app/.Main", "hold:action:torch",
+                "media:action:torch,action:record", "tile:", "tile:oplus", "tile:/Tile", "tile:oplus/",
+                "tile:oplus/--user", "tile:com.example/.Tile;reboot", "tile:oplus/.Tile\n", "tile:oplus/a/b"}) {
+            CoreTest.check(!Options.canHold(target) && !Options.validTarget("hold:" + target), "reject hold: " + target);
+            if (target != null && target.startsWith("tile:")) CoreTest.check(!Options.validTarget(target), "reject tile: " + target);
+        }
+        CoreTest.check(!Options.validComponent("oplus/.Tile"), "single-segment exception limited to tiles");
         CoreTest.check(Options.validTarget("media:action:media_next,action:previous_app"), "media branches persist");
         CoreTest.check(!Options.validTarget("media:action:media_pause,action:unknown"), "reject unknown fallback");
         CoreTest.check(!Options.validTarget("media:action:torch,action:torch,action:lock"), "require two branches");

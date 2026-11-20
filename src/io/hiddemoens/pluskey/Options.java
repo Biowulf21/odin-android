@@ -10,7 +10,7 @@ final class Options {
         }
     }
     static final String[] ACTIONS={"action:torch","action:sound_cycle","action:vibrate_toggle","action:silent_toggle","action:silent","action:vibrate","action:ring","action:screenshot","action:lock","action:notifications","action:quick_settings","action:media_toggle","action:media_next","action:media_previous","action:volume_up","action:volume_down","action:assistant","action:wifi_toggle","action:data_toggle","action:data_sim",
-        "action:previous_app","action:pause_torch","action:media_pause","action:hotspot","action:dnd_hour","action:data_slot1","action:data_slot2"};
+        "action:previous_app","action:pause_torch","action:media_pause","action:hotspot","action:dnd_hour","action:data_slot1","action:data_slot2","action:record"};
     static boolean builtIn(String target) {
         for (String action : ACTIONS) if (action.equals(target)) return true;
         return false;
@@ -43,6 +43,8 @@ final class Options {
         return value != null && value.matches("configured:[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}");
     }
     static boolean validTarget(String value) {
+        if (isTile(value)) return true;
+        if (value != null && value.startsWith("hold:")) return canHold(value.substring(5));
         if(isConfigured(value) || isLockedAppAction(value) || validComponent(value) || isSecureCamera(value) || isLockedActivity(value))return true;
         if(value==null)return false;
         if (builtIn(value) || mediaBranches(value) != null) return true;
@@ -57,8 +59,16 @@ final class Options {
             return true;
         }catch(IllegalArgumentException error){return false;}
     }
+    private static final java.util.regex.Pattern COMPONENT = java.util.regex.Pattern.compile(
+        "[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)*/\\.?[A-Za-z_$][A-Za-z0-9_$]*(?:\\.[A-Za-z_$][A-Za-z0-9_$]*)*");
     static boolean validComponent(String value) {
-        return value != null && value.length() <= 500 && value.matches("[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)+/\\.?[A-Za-z_$][A-Za-z0-9_$]*(?:\\.[A-Za-z_$][A-Za-z0-9_$]*)*");
+        return value != null && value.length() <= 500 && value.indexOf('.') >= 0 && value.indexOf('.') < value.indexOf('/') && COMPONENT.matcher(value).matches();
+    }
+    static boolean isTile(String value) {
+        return value != null && value.startsWith("tile:") && value.length() <= 505 && COMPONENT.matcher(value).region(5, value.length()).matches();
+    }
+    static boolean canHold(String target) {
+        return "action:torch".equals(target) || "action:record".equals(target) || isTile(target);
     }
     static int port(String value) {
         if (value == null || !value.matches("[0-9]{1,5}")) return -1;

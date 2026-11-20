@@ -3,6 +3,7 @@ package io.hiddemoens.pluskey;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.drawable.Drawable;
@@ -24,14 +25,46 @@ import java.util.*;
 final class ChoicePicker {
     interface Selected { void select(Targets.Choice choice); }
 
-    private static final class Entry {
+    private static class Entry {
         final Targets.Choice choice;
         final ResolveInfo app;
-        final String searchName;
+        final String title;
         Entry(Targets.Choice choice, ResolveInfo app) {
+            this(choice, app, choice.label);
+        }
+        Entry(Targets.Choice choice, ResolveInfo app, String title) {
             this.choice = choice;
             this.app = app;
-            this.searchName = choice.label.toLowerCase(Locale.ROOT);
+            this.title = title;
+        }
+    }
+
+    private static final class Heading extends Entry {
+        Heading(String title) { super(new Targets.Choice(title, null), null); }
+    }
+
+    private static final class AppGroup extends Entry {
+        final ApplicationInfo info;
+        final List<Entry> children = new ArrayList<>();
+        final Set<String> targets = new HashSet<>();
+        boolean hasLocked, hasTiles;
+
+        AppGroup(ApplicationInfo info, PackageManager pm) {
+            super(new Targets.Choice(info.loadLabel(pm).toString(), info.packageName), null);
+            this.info = info;
+        }
+
+        void add(Targets.Choice choice, ResolveInfo source, String title) {
+            if (!targets.add(choice.target)) return;
+            children.add(new Entry(choice, source, title));
+            hasLocked |= Policy.shouldWakeScreen(choice.target);
+            hasTiles |= Options.isTile(choice.target);
+        }
+
+        boolean matches(String query) {
+            if (title.toLowerCase(Locale.ROOT).contains(query) || info.packageName.toLowerCase(Locale.ROOT).contains(query)) return true;
+            for (Entry child : children) if (child.title.toLowerCase(Locale.ROOT).contains(query)) return true;
+            return false;
         }
     }
 
@@ -40,10 +73,10 @@ final class ChoicePicker {
     private final List<Entry> visible = new ArrayList<>();
     private final List<Entry> actions = new ArrayList<>();
     private final LruCache<String, Drawable> icons = new LruCache<>(32);
-    private List<Entry> apps;
-    private Set<String> secureCameras = Collections.emptySet();
-    private Map<String, List<Targets.Choice>> lockedApps = Collections.emptyMap();
-    private TextView legend;
+    private List<AppGroup> apps;
+    private AppGroup openedApp;
+    private int appsPosition;
+    private TextView legend, tileNote;
     private BottomSheetDialog sheet;
     private EditText search;
     private ListView list;
@@ -53,7 +86,7 @@ final class ChoicePicker {
     private TextView gesture;
     private TabLayout tabs;
     private ImageButton back;
-    private View timingButton;
+    private View timingButton, removeButton;
     private boolean browsingApps, loading;
     private final Rows rows = new Rows();
 
@@ -62,7 +95,7 @@ final class ChoicePicker {
         this.selected = selected;
     }
 
-    void show(String title, String unsetLabel, String current, Runnable timing) {
+    void show(String title, String unsetLabel, String current, Runnable timing, Runnable remove) {
         this.current = current;
         gestureTitle = title;
         if (unsetLabel != null) actions.add(new Entry(new Targets.Choice(unsetLabel, null), null));
@@ -93,13 +126,10 @@ final class ChoicePicker {
         back.setContentDescription("Back to gestures");
         back.setPadding(dp(12), dp(12), dp(12), dp(12));
         back.setImageResource(R.drawable.ic_back);
-        back.setOnClickListener(v -> {
-            if (mediaStep == 0) sheet.cancel();
-            else showStep(mediaStep - 1);
-        });
+        back.setOnClickListener(v -> goBack());
         sheet.setOnKeyListener((dialog, key, event) -> {
-            if (key != android.view.KeyEvent.KEYCODE_BACK || mediaStep == 0) return false;
-            if (event.getAction() == android.view.KeyEvent.ACTION_UP) showStep(mediaStep - 1);
+            if (key != android.view.KeyEvent.KEYCODE_BACK || mediaStep == 0 && openedApp == null) return false;
+            if (event.getAction() == android.view.KeyEvent.ACTION_UP) goBack();
             return true;
         });
         heading.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
@@ -127,6 +157,7 @@ final class ChoicePicker {
         lock.setTint(accent);
         legend.setCompoundDrawablesRelativeWithIntrinsicBounds(lock, null, null, null);
         legend.setCompoundDrawablePadding(dp(8));
+        tileNote = Ui.text(context, body, "Only tiles already in Android Quick Settings are shown.", 14, false);
         search = new EditText(context);
         search.setSingleLine();
         search.setHint("Search apps");
@@ -155,6 +186,7 @@ final class ChoicePicker {
         body.addView(list, results);
         empty = Ui.text(context, body, "", 16, true);
         if (timing != null) timingButton = Ui.button(context, body, "Press timing", false, v -> { sheet.dismiss(); timing.run(); });
+        if (remove != null) removeButton = Ui.button(context, body, "Remove pattern", false, v -> { sheet.dismiss(); remove.run(); });
         list.setOnItemClickListener((parent, view, position, id) -> pick(visible.get(position)));
         search.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
@@ -180,36 +212,41 @@ final class ChoicePicker {
     private void loadApps() {
         loading = true;
         new Thread(() -> {
-            List<Entry> found = new ArrayList<>();
             PackageManager pm = context.getPackageManager();
-            Map<String, List<Targets.Choice>> locked = new HashMap<>();
-            Set<String> cameras = new HashSet<>();
-            Intent secure = new Intent(android.provider.MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA_SECURE);
-            for (ResolveInfo handler : pm.queryIntentActivities(secure, PackageManager.MATCH_DEFAULT_ONLY)) {
-                if (handler.activityInfo.exported && (handler.activityInfo.permission == null ||
-                    context.checkSelfPermission(handler.activityInfo.permission) == PackageManager.PERMISSION_GRANTED))
-                    cameras.add(handler.activityInfo.packageName);
-            }
+            Map<String, AppGroup> groups = new HashMap<>();
+            addHandlers(groups, new Intent(android.provider.MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA_SECURE), Options.SECURE_CAMERA, "Secure camera");
+            addHandlers(groups, new Intent(Intent.ACTION_CREATE_NOTE), "note:", "Create note");
+            addHandlers(groups, new Intent(android.speech.RecognizerIntent.ACTION_VOICE_SEARCH_HANDS_FREE), "voice:", "Hands-free voice");
+            addHandlers(groups, new Intent(Intent.ACTION_CREATE_SHORTCUT), "configure:", "Configure shortcut");
+            Set<String> scanned = new HashSet<>();
             for (ResolveInfo app : pm.queryIntentActivities(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)) {
                 if (!app.activityInfo.exported || context.getPackageName().equals(app.activityInfo.packageName)) continue;
-                String target = new ComponentName(app.activityInfo.packageName, app.activityInfo.name).flattenToString();
-                locked.computeIfAbsent(app.activityInfo.packageName, owner -> Targets.lockedActivities(context, owner, cameras.contains(owner)));
-                found.add(new Entry(new Targets.Choice(app.loadLabel(pm).toString(), target), app));
+                String owner = app.activityInfo.packageName;
+                String target = new ComponentName(owner, app.activityInfo.name).flattenToString();
+                if (!Options.validComponent(target)) continue;
+                AppGroup group = group(groups, app.activityInfo.applicationInfo);
+                String name = app.loadLabel(pm).toString();
+                group.add(new Targets.Choice(name, target), app, name.equals(group.title) ? "Open app" : "Open " + name);
+                if (scanned.add(owner)) {
+                    for (Targets.Choice locked : Targets.lockedActivities(context, owner, group.targets.contains(Options.SECURE_CAMERA + owner)))
+                        group.add(locked, app, locked.label);
+                }
+                for (Targets.Choice shortcut : Targets.shortcuts(context, app)) group.add(shortcut, app, shortcut.label);
             }
-            Set<String> launcherPackages = new HashSet<>();
-            for (Entry entry : found) launcherPackages.add(entry.app.activityInfo.packageName);
-            addHandlers(found, secure, Options.SECURE_CAMERA, "Secure camera", launcherPackages);
-            addHandlers(found, new Intent(Intent.ACTION_CREATE_NOTE), "note:", "Create note", Collections.emptySet());
-            addHandlers(found, new Intent(android.speech.RecognizerIntent.ACTION_VOICE_SEARCH_HANDS_FREE),
-                "voice:", "Hands-free voice", Collections.emptySet());
-            addHandlers(found, new Intent(Intent.ACTION_CREATE_SHORTCUT), "configure:", "Configure shortcut", Collections.emptySet());
+            Set<String> pinned = QuickTiles.pinned(context);
+            for (ResolveInfo tile : QuickTiles.discover(context, null)) {
+                String target = "tile:" + new ComponentName(tile.serviceInfo.packageName, tile.serviceInfo.name).flattenToString();
+                if (!Options.isTile(target) || !pinned.contains(target.substring(5))) continue;
+                AppGroup group = group(groups, tile.serviceInfo.applicationInfo);
+                String title = tile.loadLabel(pm).toString();
+                group.add(new Targets.Choice(title, target), tile, title);
+            }
+            List<AppGroup> found = new ArrayList<>(groups.values());
             Collator collator = Collator.getInstance();
-            found.sort((a, b) -> collator.compare(a.choice.label, b.choice.label));
+            found.sort(Comparator.comparing((AppGroup group) -> group.title, collator).thenComparing(group -> group.info.packageName));
+            for (AppGroup group : found) group.children.sort(Comparator.comparing((Entry entry) -> entry.title, collator).thenComparing(entry -> entry.choice.target));
             context.getMainExecutor().execute(() -> {
                 if (!sheet.isShowing()) return;
-                locked.values().removeIf(List::isEmpty);
-                lockedApps = locked;
-                secureCameras = cameras;
                 apps = found;
                 loading = false;
                 refresh();
@@ -217,36 +254,78 @@ final class ChoicePicker {
         }, "PlusKey-app-picker").start();
     }
 
-    private void addHandlers(List<Entry> entries, Intent intent, String prefix, String label, Set<String> skip) {
+    private AppGroup group(Map<String, AppGroup> groups, ApplicationInfo info) {
+        return groups.computeIfAbsent(info.packageName, owner -> new AppGroup(info, context.getPackageManager()));
+    }
+
+    private void addHandlers(Map<String, AppGroup> groups, Intent intent, String prefix, String label) {
         PackageManager pm = context.getPackageManager();
-        Set<String> added = new HashSet<>();
         for (ResolveInfo handler : pm.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)) {
             android.content.pm.ActivityInfo info = handler.activityInfo;
-            if (!info.exported || skip.contains(info.packageName) || info.permission != null &&
+            if (!info.exported || context.getPackageName().equals(info.packageName) || info.permission != null &&
                 context.checkSelfPermission(info.permission) != PackageManager.PERMISSION_GRANTED) continue;
             boolean configure = prefix.equals("configure:");
             String target = prefix + (configure ? new ComponentName(info.packageName, info.name).flattenToString() : info.packageName);
-            if (!added.add(target)) continue;
-            String name = (configure ? handler.loadLabel(pm) : info.applicationInfo.loadLabel(pm)) + " · " + label;
-            entries.add(new Entry(new Targets.Choice(name, target), handler));
+            if (!(configure ? Options.validComponent(target.substring(prefix.length())) : Options.validTarget(target))) continue;
+            AppGroup group = group(groups, info.applicationInfo);
+            String title = configure ? label + " · " + handler.loadLabel(pm) : label;
+            group.add(new Targets.Choice(group.title + " · " + title, target), handler, title);
         }
     }
 
     private void refresh() {
-        search.setVisibility(browsingApps ? View.VISIBLE : View.GONE);
-        legend.setVisibility(browsingApps && (!secureCameras.isEmpty() || !lockedApps.isEmpty()) ? View.VISIBLE : View.GONE);
+        search.setVisibility(browsingApps && openedApp == null ? View.VISIBLE : View.GONE);
+        legend.setVisibility(browsingApps && (openedApp != null ? openedApp.hasLocked : apps != null && apps.stream().anyMatch(group -> group.hasLocked)) ? View.VISIBLE : View.GONE);
+        tileNote.setVisibility(openedApp != null && openedApp.hasTiles ? View.VISIBLE : View.GONE);
         visible.clear();
-        if (mediaStep != 0) {
-            for (Entry entry : actions) if (Options.builtIn(entry.choice.target)) visible.add(entry);
-        } else if (!browsingApps) visible.addAll(actions);
+        if (!browsingApps) {
+            Map<String, List<Entry>> categories = new LinkedHashMap<>();
+            for (Entry entry : actions) {
+                String target = entry.choice.target;
+                if (mediaStep != 0 && !Options.builtIn(target)) continue;
+                if (target == null) visible.add(entry);
+                else categories.computeIfAbsent(actionCategory(target), key -> new ArrayList<>()).add(entry);
+            }
+            for (Map.Entry<String, List<Entry>> category : categories.entrySet()) {
+                visible.add(new Heading(category.getKey()));
+                visible.addAll(category.getValue());
+            }
+        } else if (openedApp != null) {
+            for (String section : new String[]{"Launch", "Lock screen", "Shortcuts", "Quick Settings"}) {
+                boolean first = true;
+                for (Entry entry : openedApp.children) {
+                    if (!section.equals(appCategory(entry.choice.target))) continue;
+                    if (first) visible.add(new Heading(section));
+                    first = false;
+                    visible.add(entry);
+                }
+            }
+        }
         else if (apps != null) {
             String query = search.getText().toString().trim().toLowerCase(Locale.ROOT);
-            for (Entry entry : apps) if (entry.searchName.contains(query)) visible.add(entry);
+            for (AppGroup group : apps) if (group.matches(query)) visible.add(group);
         }
         empty.setText(loading ? "Loading apps…" : "No matching apps");
         empty.setVisibility(visible.isEmpty() ? View.VISIBLE : View.GONE);
         list.setVisibility(visible.isEmpty() ? View.GONE : View.VISIBLE);
         rows.notifyDataSetChanged();
+    }
+
+    private static String actionCategory(String target) {
+        switch (target) {
+            case "action:sound_cycle": case "action:vibrate_toggle": case "action:silent_toggle": case "action:silent":
+            case "action:vibrate": case "action:ring": case "action:volume_up": case "action:volume_down": case "action:dnd_hour": return "Sound";
+            case "action:media_toggle": case "action:media_pause": case "action:media_next": case "action:media_previous": case "media:": return "Media";
+            case "action:wifi_toggle": case "action:data_toggle": case "action:data_sim": case "action:data_slot1": case "action:data_slot2": case "action:hotspot": return "Connectivity";
+            default: return "Device";
+        }
+    }
+
+    private static String appCategory(String target) {
+        if (Options.isTile(target)) return "Quick Settings";
+        if (Policy.shouldWakeScreen(target)) return "Lock screen";
+        if (target.startsWith("configure:") || target.startsWith("shortcut:")) return "Shortcuts";
+        return "Launch";
     }
 
     private void pick(Entry entry) {
@@ -267,31 +346,31 @@ final class ChoicePicker {
             showStep(1);
             return;
         }
-        if (entry.app != null && Options.validComponent(entry.choice.target)) {
-            List<Targets.Choice> shortcuts = Targets.shortcuts(context, entry.app);
-            shortcuts.addAll(0, lockedApps.getOrDefault(entry.app.activityInfo.packageName, Collections.emptyList()));
-            if (secureCameras.contains(entry.app.activityInfo.packageName)) {
-                shortcuts.add(0, new Targets.Choice(entry.choice.label + " · Secure camera",
-                    Options.SECURE_CAMERA + entry.app.activityInfo.packageName));
-            }
-            if (!shortcuts.isEmpty()) {
-                shortcuts.add(0, entry.choice);
-                String[] labels = new String[shortcuts.size()];
-                int checked = -1;
-                for (int i = 0; i < labels.length; i++) {
-                    labels[i] = i == 0 ? "Open app" : shortcuts.get(i).label;
-                    if (Options.isSecureCamera(shortcuts.get(i).target)) labels[i] = "Open secure camera while locked";
-                    if (Objects.equals(shortcuts.get(i).target, current)) checked = i;
-                }
-                new com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
-                    .setTitle(entry.choice.label).setSingleChoiceItems(labels, checked, (dialog, index) -> {
-                        dialog.dismiss();
-                        finish(shortcuts.get(index));
-                    }).setNegativeButton("Back", null).show();
-                return;
-            }
+        if (entry instanceof AppGroup) {
+            appsPosition = list.getFirstVisiblePosition();
+            context.getSystemService(android.view.inputmethod.InputMethodManager.class).hideSoftInputFromWindow(search.getWindowToken(), 0);
+            showApp((AppGroup) entry);
+            return;
         }
         finish(entry.choice);
+    }
+
+    private void goBack() {
+        if (openedApp != null) showApp(null);
+        else if (mediaStep != 0) showStep(mediaStep - 1);
+        else sheet.cancel();
+    }
+
+    private void showApp(AppGroup group) {
+        openedApp = group;
+        gesture.setText(group == null ? gestureTitle : group.title);
+        back.setContentDescription(group == null ? "Back to gestures" : "Back to apps");
+        tabs.setVisibility(group == null ? View.VISIBLE : View.GONE);
+        if (timingButton != null) timingButton.setVisibility(group == null ? View.VISIBLE : View.GONE);
+        if (removeButton != null) removeButton.setVisibility(group == null ? View.VISIBLE : View.GONE);
+        refresh();
+        list.setSelection(group == null ? appsPosition : 0);
+        gesture.announceForAccessibility(gesture.getText());
     }
 
     private void showStep(int step) {
@@ -301,11 +380,12 @@ final class ChoicePicker {
         back.setContentDescription(step == 0 ? "Back to gestures" : step == 1 ? "Back to actions" : "Back to playback action");
         tabs.setVisibility(step == 0 ? View.VISIBLE : View.GONE);
         if (timingButton != null) timingButton.setVisibility(step == 0 ? View.VISIBLE : View.GONE);
+        if (removeButton != null) removeButton.setVisibility(step == 0 ? View.VISIBLE : View.GONE);
         refresh();
         int position = step == 0 ? mainPosition : 0;
         String selected = selectedTarget();
         for (int i = 0; step != 0 && i < visible.size(); i++) {
-            if (visible.get(i).choice.target.equals(selected)) position = i;
+            if (!(visible.get(i) instanceof Heading) && Objects.equals(visible.get(i).choice.target, selected)) position = i;
         }
         list.setSelection(position);
         list.animate().cancel();
@@ -318,6 +398,7 @@ final class ChoicePicker {
         if (mediaStep == 1) return playing;
         String[] saved = Options.mediaBranches(current);
         if (mediaStep == 2) return saved == null ? null : saved[1];
+        if (current != null && current.startsWith("hold:") && Options.canHold(current.substring(5))) return current.substring(5);
         return saved == null ? current : "media:";
     }
 
@@ -328,8 +409,11 @@ final class ChoicePicker {
 
     static int actionIcon(String target) {
         if (target == null) return android.R.drawable.ic_menu_close_clear_cancel;
+        if (target.startsWith("hold:") && Options.canHold(target.substring(5))) target = target.substring(5);
+        if (Options.isTile(target)) return android.R.drawable.ic_menu_preferences;
         if (target.startsWith("media:")) return R.drawable.ic_smart;
         switch (target) {
+            case "action:record": return android.R.drawable.ic_btn_speak_now;
             case "action:assistant": return android.R.drawable.ic_btn_speak_now;
             case "action:previous_app": return R.drawable.ic_recent;
             case "action:pause_torch": return R.drawable.ic_pause_torch;
@@ -354,11 +438,30 @@ final class ChoicePicker {
         }
     }
 
+    static boolean canHold(Context context, String target) {
+        if (!Options.canHold(target)) return false;
+        return !Options.isTile(target) || QuickTiles.toggleable(context, ComponentName.unflattenFromString(target.substring(5)));
+    }
+
     private final class Rows extends BaseAdapter {
         public int getCount() { return visible.size(); }
         public Entry getItem(int index) { return visible.get(index); }
         public long getItemId(int index) { return index; }
+        public boolean areAllItemsEnabled() { return false; }
+        public boolean isEnabled(int index) { return !(getItem(index) instanceof Heading); }
+        public int getViewTypeCount() { return 2; }
+        public int getItemViewType(int index) { return isEnabled(index) ? 0 : 1; }
         public View getView(int index, View recycled, ViewGroup parent) {
+            Entry entry = getItem(index);
+            if (entry instanceof Heading) {
+                TextView heading = recycled == null ? new TextView(context) : (TextView) recycled;
+                heading.setText(entry.title);
+                heading.setTextSize(14);
+                heading.setTypeface(null, Typeface.BOLD);
+                heading.setPadding(dp(16), dp(12), dp(16), dp(4));
+                heading.setAccessibilityHeading(true);
+                return heading;
+            }
             LinearLayout row = (LinearLayout) recycled;
             if (row == null) {
                 row = new LinearLayout(context);
@@ -379,30 +482,37 @@ final class ChoicePicker {
                 lock.setImageResource(R.drawable.ic_locked_action);
                 lock.setColorFilter(Ui.color(context, androidx.appcompat.R.attr.colorPrimary));
                 row.addView(lock, new LinearLayout.LayoutParams(dp(24), dp(24)));
+                TextView badge = new TextView(context);
+                badge.setText("QS tile");
+                badge.setTextSize(12);
+                badge.setTextColor(Ui.color(context, com.google.android.material.R.attr.colorOnSecondaryContainer));
+                badge.setBackground(rounded(Ui.color(context, com.google.android.material.R.attr.colorSecondaryContainer), 8));
+                badge.setPadding(dp(6), dp(2), dp(6), dp(2));
+                row.addView(badge);
             }
-            Entry entry = getItem(index);
+            AppGroup group = entry instanceof AppGroup ? (AppGroup) entry : null;
             ImageView icon = (ImageView) row.getChildAt(0);
-            if (entry.app == null) {
+            if (entry.app == null && group == null) {
                 icon.setImageResource(actionIcon(entry.choice.target));
                 icon.setColorFilter(Ui.color(context, com.google.android.material.R.attr.colorOnSurface));
             } else {
                 icon.clearColorFilter();
                 Drawable drawable = icons.get(entry.choice.target);
                 if (drawable == null) {
-                    drawable = entry.app.loadIcon(context.getPackageManager());
+                    drawable = group == null ? entry.app.loadIcon(context.getPackageManager()) : group.info.loadIcon(context.getPackageManager());
                     if (drawable != null) icons.put(entry.choice.target, drawable);
                 }
                 icon.setImageDrawable(drawable);
+                if (Options.isTile(entry.choice.target) && entry.app.serviceInfo.icon != 0)
+                    icon.setColorFilter(Ui.color(context, androidx.appcompat.R.attr.colorPrimary));
             }
-            boolean launcher = entry.app != null && Options.validComponent(entry.choice.target);
-            boolean supportsLocked = Policy.shouldWakeScreen(entry.choice.target) || launcher && (secureCameras.contains(entry.app.activityInfo.packageName) || lockedApps.containsKey(entry.app.activityInfo.packageName));
+            boolean supportsLocked = group == null ? Policy.shouldWakeScreen(entry.choice.target) : group.hasLocked;
             TextView label = (TextView) row.getChildAt(1);
-            label.setText(entry.choice.label);
+            label.setText(entry.title);
             row.getChildAt(3).setVisibility(supportsLocked ? View.VISIBLE : View.GONE);
-            label.setContentDescription(supportsLocked ? entry.choice.label + ", supports locked use" : null);
-            boolean checked = Objects.equals(selectedTarget(), entry.choice.target)
-                || (launcher && lockedApps.getOrDefault(entry.app.activityInfo.packageName, Collections.emptyList()).stream().anyMatch(option -> option.target.equals(current)))
-                || (launcher && (Options.SECURE_CAMERA + entry.app.activityInfo.packageName).equals(current));
+            row.getChildAt(4).setVisibility((group != null ? group.hasTiles : Options.isTile(entry.choice.target)) ? View.VISIBLE : View.GONE);
+            label.setContentDescription(supportsLocked ? entry.title + ", supports locked use" : null);
+            boolean checked = group == null ? Objects.equals(selectedTarget(), entry.choice.target) : group.targets.contains(selectedTarget());
             row.setBackgroundColor(checked ? 0x18ff902f : android.graphics.Color.TRANSPARENT);
             row.getChildAt(2).setVisibility(checked ? View.VISIBLE : View.INVISIBLE);
             row.setStateDescription(checked ? "Selected" : null);

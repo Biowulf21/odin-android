@@ -1,5 +1,6 @@
 package io.hiddemoens.pluskey;
 import java.io.*;
+import java.util.*;
 final class Mailbox {
     static final String STOP_REQUEST = "helper-stop";
     static final String PREVIEW_REQUEST = "preview-request";
@@ -18,18 +19,61 @@ final class Mailbox {
             case KeyPress.LONG: return "long-target";
             case KeyPress.DOUBLE: return "double-target";
             case KeyPress.TRIPLE: return "triple-target";
-            default: throw new IllegalArgumentException("Unknown press gesture");
+            default: return "pattern-target-" + GesturePatterns.text(gesture);
         }
     }
 
     void select(int gesture, String target) throws IOException {
         String name = targetFile(gesture);
+        if (gesture > KeyPress.TRIPLE && !marker(gesture).exists()) throw new IllegalArgumentException("Pattern was removed");
+        if (target != null && target.startsWith("hold:")) {
+            String prefix = GesturePatterns.text(gesture);
+            if (!prefix.endsWith("-")) throw new IllegalArgumentException("Hold needs a final long press");
+            for (int other : patterns()) if (other != gesture && GesturePatterns.text(other).startsWith(prefix))
+                throw new IllegalArgumentException("Remove longer patterns starting with this sequence first");
+        }
         if (gesture != KeyPress.SHORT && target == null) {
             File file = new File(dir, name);
             if (file.exists() && !file.delete()) throw new IOException("Could not clear selected action");
         } else {
             writeTarget(name, target);
         }
+    }
+
+    private File marker(int gesture) { return new File(dir, "gesture-" + GesturePatterns.text(gesture)); }
+    Set<Integer> patterns() {
+        Set<Integer> result = new TreeSet<>();
+        String[] names = dir == null ? null : dir.list((parent,name) -> name.matches("gesture-[.-]{1,8}"));
+        if (names != null) for (String name : names) {
+            int id = GesturePatterns.id(name.substring(8));
+            if (id > KeyPress.TRIPLE) result.add(id);
+        }
+        return result;
+    }
+    Set<Integer> activeGestures() {
+        Set<Integer> result = patterns();
+        result.removeIf(id -> !new File(dir, targetFile(id)).exists());
+        result.add(KeyPress.SHORT);
+        for (int id = KeyPress.LONG; id <= KeyPress.TRIPLE; id++)
+            if (new File(dir, targetFile(id)).exists()) result.add(id);
+        return result;
+    }
+    void addPattern(int id) throws IOException {
+        if (id <= KeyPress.TRIPLE || marker(id).exists()) throw new IllegalArgumentException("This pattern already has a tile");
+        String pattern = GesturePatterns.text(id);
+        for (int other : activeGestures()) {
+            String prefix = GesturePatterns.text(other);
+            if (pattern.startsWith(prefix)) {
+                String target = selected(other);
+                if (target != null && target.startsWith("hold:")) throw new IllegalArgumentException("Starts with an existing While held pattern");
+            }
+        }
+        if (!marker(id).createNewFile()) throw new IOException("Could not save pattern");
+    }
+    void removePattern(int id) throws IOException {
+        if (id <= KeyPress.TRIPLE) throw new IllegalArgumentException("Built-in gesture");
+        select(id, null);
+        if (!marker(id).delete()) throw new IOException("Could not remove pattern");
     }
 
     boolean multiPressEnabled() {
@@ -134,7 +178,12 @@ final class Mailbox {
     }
     boolean stopRequested() { return dir != null && new File(dir, STOP_REQUEST).exists(); }
     void requestPreview(int gesture) throws IOException {
-        writeRequest(PREVIEW_REQUEST, gesture);
+        if (gesture <= KeyPress.TRIPLE) writeRequest(PREVIEW_REQUEST, gesture);
+        else {
+            File next = new File(dir, PREVIEW_REQUEST + ".next");
+            try (DataOutputStream output = new DataOutputStream(new FileOutputStream(next))) { output.writeInt(gesture); }
+            if (!next.renameTo(new File(dir, PREVIEW_REQUEST))) throw new IOException("Could not send preview");
+        }
     }
     private void writeRequest(String name, int value) throws IOException {
         if (dir == null) throw new IOException("App storage unavailable");
@@ -148,6 +197,10 @@ final class Mailbox {
         File claimed = new File(dir, PREVIEW_REQUEST + ".claimed");
         if (!file.renameTo(claimed)) throw new IOException("Could not read preview request");
         try (FileInputStream input = new FileInputStream(claimed)) {
+            if (input.getChannel().size() == 4) {
+                int id = new DataInputStream(input).readInt();
+                return patterns().contains(id) ? id : 0;
+            }
             int value = input.read();
             return value >= KeyPress.SHORT && value <= KeyPress.TRIPLE ? value : 0;
         } finally {
