@@ -82,6 +82,9 @@ final class ChoicePicker {
     private ListView list;
     private TextView empty;
     private String current, gestureTitle, playing;
+    private boolean choosingFan;
+    private final Set<String> fanSelection = new LinkedHashSet<>();
+    private Button saveFan;
     private int mediaStep, mainPosition;
     private TextView gesture;
     private TabLayout tabs;
@@ -105,6 +108,7 @@ final class ChoicePicker {
             actions.add(new Entry(new Targets.Choice(Targets.LABELS[i], Targets.ACTIONS[i]), null));
         }
         actions.add(new Entry(new Targets.Choice("If media is playing…", "media:"), null));
+        actions.add(new Entry(new Targets.Choice("App fan", "fan:"), null));
         sheet = new BottomSheetDialog(context);
         sheet.setDismissWithAnimation(true);
         LinearLayout body = Ui.column(context);
@@ -128,7 +132,7 @@ final class ChoicePicker {
         back.setImageResource(R.drawable.ic_back);
         back.setOnClickListener(v -> goBack());
         sheet.setOnKeyListener((dialog, key, event) -> {
-            if (key != android.view.KeyEvent.KEYCODE_BACK || mediaStep == 0 && openedApp == null) return false;
+            if (key != android.view.KeyEvent.KEYCODE_BACK || mediaStep == 0 && openedApp == null && !choosingFan) return false;
             if (event.getAction() == android.view.KeyEvent.ACTION_UP) goBack();
             return true;
         });
@@ -185,6 +189,10 @@ final class ChoicePicker {
         results.weight = 1;
         body.addView(list, results);
         empty = Ui.text(context, body, "", 16, true);
+        saveFan = Ui.button(context, body, "Save", true, v -> {
+            String target = "fan:" + String.join(",", fanSelection);
+            if (Options.fanApps(target) != null) finish(new Targets.Choice(Targets.label(context, target), target));
+        });
         if (timing != null) timingButton = Ui.button(context, body, "Press timing", false, v -> { sheet.dismiss(); timing.run(); });
         if (remove != null) removeButton = Ui.button(context, body, "Remove pattern", false, v -> { sheet.dismiss(); remove.run(); });
         list.setOnItemClickListener((parent, view, position, id) -> pick(visible.get(position)));
@@ -274,11 +282,27 @@ final class ChoicePicker {
     }
 
     private void refresh() {
-        search.setVisibility(browsingApps && openedApp == null ? View.VISIBLE : View.GONE);
+        search.setVisibility((browsingApps || choosingFan) && openedApp == null ? View.VISIBLE : View.GONE);
         legend.setVisibility(browsingApps && (openedApp != null ? openedApp.hasLocked : apps != null && apps.stream().anyMatch(group -> group.hasLocked)) ? View.VISIBLE : View.GONE);
         tileNote.setVisibility(openedApp != null && openedApp.hasTiles ? View.VISIBLE : View.GONE);
         visible.clear();
-        if (!browsingApps) {
+        saveFan.setVisibility(choosingFan ? View.VISIBLE : View.GONE);
+        if (choosingFan) {
+            String query = search.getText().toString().trim().toLowerCase(Locale.ROOT);
+            Set<String> available = new HashSet<>();
+            if (apps != null) for (AppGroup group : apps) {
+                for (Entry entry : group.children) {
+                    if (!Options.validComponent(entry.choice.target)) continue;
+                    available.add(entry.choice.target);
+                    if (entry.choice.label.toLowerCase(Locale.ROOT).contains(query) ||
+                        group.info.packageName.toLowerCase(Locale.ROOT).contains(query))
+                        visible.add(new Entry(entry.choice, entry.app));
+                }
+            }
+            if (apps != null) fanSelection.retainAll(available);
+            saveFan.setText("Save " + fanSelection.size() + " apps");
+            saveFan.setEnabled(fanSelection.size() >= 2);
+        } else if (!browsingApps) {
             Map<String, List<Entry>> categories = new LinkedHashMap<>();
             for (Entry entry : actions) {
                 String target = entry.choice.target;
@@ -329,6 +353,32 @@ final class ChoicePicker {
     }
 
     private void pick(Entry entry) {
+        if (choosingFan) {
+            String target = entry.choice.target;
+            if (!fanSelection.remove(target)) {
+                if (fanSelection.size() == Options.MAX_FAN_APPS) {
+                    Toast.makeText(context, "Choose up to " + Options.MAX_FAN_APPS + " apps", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                fanSelection.add(target);
+            }
+            refresh();
+            return;
+        }
+        if ("fan:".equals(entry.choice.target)) {
+            fanSelection.clear();
+            String[] saved = Options.fanApps(current);
+            if (saved != null) Collections.addAll(fanSelection, saved);
+            choosingFan = true;
+            showApp(null);
+            gesture.setText("App fan");
+            search.setHint("Choose 2–6 apps");
+            tabs.setVisibility(View.GONE);
+            if (timingButton != null) timingButton.setVisibility(View.GONE);
+            if (removeButton != null) removeButton.setVisibility(View.GONE);
+            if (apps == null && !loading) loadApps();
+            return;
+        }
         if (mediaStep == 1) {
             playing = entry.choice.target;
             showStep(2);
@@ -356,7 +406,12 @@ final class ChoicePicker {
     }
 
     private void goBack() {
-        if (openedApp != null) showApp(null);
+        if (choosingFan) {
+            choosingFan = false;
+            search.setText("");
+            search.setHint("Search apps");
+            showApp(null);
+        } else if (openedApp != null) showApp(null);
         else if (mediaStep != 0) showStep(mediaStep - 1);
         else sheet.cancel();
     }
@@ -399,6 +454,7 @@ final class ChoicePicker {
         String[] saved = Options.mediaBranches(current);
         if (mediaStep == 2) return saved == null ? null : saved[1];
         if (current != null && current.startsWith("hold:") && Options.canHold(current.substring(5))) return current.substring(5);
+        if (Options.fanApps(current) != null) return "fan:";
         return saved == null ? current : "media:";
     }
 
@@ -411,6 +467,7 @@ final class ChoicePicker {
         if (target == null) return android.R.drawable.ic_menu_close_clear_cancel;
         if (target.startsWith("hold:") && Options.canHold(target.substring(5))) target = target.substring(5);
         if (Options.isTile(target)) return android.R.drawable.ic_menu_preferences;
+        if (target.startsWith("fan:")) return R.drawable.ic_app_fan;
         if (target.startsWith("media:")) return R.drawable.ic_smart;
         switch (target) {
             case "action:record": return android.R.drawable.ic_btn_speak_now;
@@ -512,7 +569,7 @@ final class ChoicePicker {
             row.getChildAt(3).setVisibility(supportsLocked ? View.VISIBLE : View.GONE);
             row.getChildAt(4).setVisibility((group != null ? group.hasTiles : Options.isTile(entry.choice.target)) ? View.VISIBLE : View.GONE);
             label.setContentDescription(supportsLocked ? entry.title + ", supports locked use" : null);
-            boolean checked = group == null ? Objects.equals(selectedTarget(), entry.choice.target) : group.targets.contains(selectedTarget());
+            boolean checked = choosingFan ? fanSelection.contains(entry.choice.target) : group == null ? Objects.equals(selectedTarget(), entry.choice.target) : group.targets.contains(selectedTarget());
             row.setBackgroundColor(checked ? 0x18ff902f : android.graphics.Color.TRANSPARENT);
             row.getChildAt(2).setVisibility(checked ? View.VISIBLE : View.INVISIBLE);
             row.setStateDescription(checked ? "Selected" : null);

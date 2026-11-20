@@ -30,6 +30,7 @@ Optional **Automatic startup** uses a protected-settings permission to turn on W
 - **SIM and hotspot** — Use SIM 1 or SIM 2 for data by slot, or toggle the Wi-Fi hotspot.
 - **Media gestures** — Choose **If media is playing…** to assign separate built-in actions for playback and idle. Choose **Pause media** for playback and **Toggle flashlight** for idle to combine them on one gesture.
 - **Other actions** — **Previous app** requests the system recent-app switch. **Do Not Disturb · 1 hour** requests priority mode with a one-hour countdown or ends manual DND early.
+- **App fan** — Assign two to six apps to a gesture. Press to open the fan beside the Plus Key, tap an icon to launch, or repeat the gesture to close.
 - **While locked** — Connectivity, flashlight, sound, media, volume, and lock actions can run while locked. Secure camera, lock-screen activities, note and hands-free handlers, and the default assistant can be requested while locked. Android and the receiving app control what opens and when authentication is required. On Android 16 or later, other apps, shortcuts, and actions can wake the screen and run if you unlock within 30 seconds and the firmware delivers the unlock callback. A new custom press replaces any pending action.
 
 Successful custom actions give brief haptic feedback. Plus Key observes native button events, and OnePlus can still act on them. Accessible static app shortcuts are available in the picker.

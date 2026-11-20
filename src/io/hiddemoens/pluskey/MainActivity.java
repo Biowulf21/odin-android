@@ -676,6 +676,11 @@ public final class MainActivity extends AppCompatActivity {
         name.setText(target == null && gesture != KeyPress.LONG ? "Off" : Targets.label(this, target));
         icon.setImageTintList(null);
         String action = target != null && target.startsWith("hold:") ? target.substring(5) : target;
+        if (Options.fanApps(action) != null) {
+            icon.setImageResource(R.drawable.ic_app_fan);
+            icon.setImageTintList(android.content.res.ColorStateList.valueOf(Ui.color(this, androidx.appcompat.R.attr.colorPrimary)));
+            return;
+        }
         if (Options.isTile(action)) {
             try {
                 ComponentName component = ComponentName.unflattenFromString(action.substring(5));

@@ -42,8 +42,19 @@ final class Options {
     static boolean isConfigured(String value) {
         return value != null && value.matches("configured:[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}");
     }
+    static final int MAX_FAN_APPS = 6;
+
+    static String[] fanApps(String target) {
+        if (target == null || !target.startsWith("fan:") || target.length() > 4 + MAX_FAN_APPS * 501) return null;
+        String[] apps = target.substring(4).split(",", -1);
+        if (apps.length < 2 || apps.length > MAX_FAN_APPS) return null;
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (String app : apps) if (!validComponent(app) || !seen.add(app)) return null;
+        return apps;
+    }
+
     static boolean validTarget(String value) {
-        if (isTile(value)) return true;
+        if (fanApps(value) != null || isTile(value)) return true;
         if (value != null && value.startsWith("hold:")) return canHold(value.substring(5));
         if(isConfigured(value) || isLockedAppAction(value) || validComponent(value) || isSecureCamera(value) || isLockedActivity(value))return true;
         if(value==null)return false;

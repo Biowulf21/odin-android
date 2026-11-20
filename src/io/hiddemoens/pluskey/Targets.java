@@ -17,6 +17,8 @@ final class Targets {
     static String label(Context context,String target){
         if(target==null)return "Managed by OnePlus";
         if(target.startsWith("hold:") && Options.canHold(target.substring(5)))return "Hold: " + label(context,target.substring(5));
+        String[] fan = Options.fanApps(target);
+        if (fan != null) return "App fan · " + fan.length + " apps";
         for(int i=0;i<ACTIONS.length;i++)if(ACTIONS[i].equals(target))return LABELS[i];
         String[] branches = Options.mediaBranches(target);
         if (branches != null) return "Playing: " + label(context, branches[0]) + " · Otherwise: " + label(context, branches[1]);
@@ -106,6 +108,10 @@ final class Targets {
     }
     static Intent[] intents(String target)throws Exception{
         if(!Options.validTarget(target))throw new IllegalArgumentException("Invalid action");
+        if (Options.fanApps(target) != null) {
+            return new Intent[]{new Intent().setClassName("io.hiddemoens.pluskey", "io.hiddemoens.pluskey.AppFanActivity")
+                .putExtra("target", target).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP)};
+        }
         if (Options.isConfigured(target)) {
             return new Intent[]{new Intent().setClassName("io.hiddemoens.pluskey", "io.hiddemoens.pluskey.ConfiguredShortcut")
                 .putExtra("target", target).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)};
