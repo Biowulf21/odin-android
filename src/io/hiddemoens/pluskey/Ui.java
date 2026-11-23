@@ -30,13 +30,13 @@ final class Ui {
         text.setPadding(0,dp(c,5),0,dp(c,5));root.addView(text,new LinearLayout.LayoutParams(-1,-2));return text;
     }
     static LinearLayout card(Context c,LinearLayout root){
-        MaterialCardView card=new MaterialCardView(c);card.setCardElevation(0);card.setRadius(dp(c,28));card.setStrokeWidth(0);
+        MaterialCardView card=new MaterialCardView(c);card.setCardElevation(0);card.setRadius(dp(c,12));card.setStrokeWidth(0);
         card.setCardBackgroundColor(color(c,com.google.android.material.R.attr.colorSurfaceContainer));
         LinearLayout content=column(c);content.setPadding(dp(c,20),dp(c,16),dp(c,20),dp(c,16));card.addView(content);
         LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);params.topMargin=dp(c,14);root.addView(card,params);return content;
     }
     static void heading(Context context, LinearLayout root, String title) {
-        TextView label = text(context, root, title, 24, false);
+        TextView label = text(context, root, title, 20, false);
         label.setTypeface(null, android.graphics.Typeface.BOLD);
         label.setAccessibilityHeading(true);
     }
@@ -67,12 +67,19 @@ final class Ui {
         TextView name = text(context, labels, title, 16, false);
         name.setPadding(0, 0, 0, dp(context, 3));
         name.setTypeface(null, android.graphics.Typeface.BOLD);
+        ImageView chevron = new ImageView(context);
+        chevron.setImageResource(R.drawable.ic_disclosure);
+        chevron.setColorFilter(color(context, com.google.android.material.R.attr.colorOnSurfaceVariant));
+        chevron.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        LinearLayout.LayoutParams chevronSize = new LinearLayout.LayoutParams(dp(context, 18), dp(context, 18));
+        chevronSize.setMarginStart(dp(context, 8));
+        hit.addView(chevron, chevronSize);
         return labels;
     }
 
     static MaterialButton button(Context c,LinearLayout root,String label,boolean primary,View.OnClickListener action){
         MaterialButton button=new MaterialButton(c,null,primary?com.google.android.material.R.attr.materialButtonStyle:com.google.android.material.R.attr.materialButtonTonalStyle);
-        button.setText(label);button.setAllCaps(false);button.setTextSize(15);button.setMinHeight(dp(c,48));button.setOnClickListener(action);
+        button.setText(label);button.setAllCaps(false);button.setTextSize(15);button.setCornerRadius(dp(c,9));button.setMinHeight(dp(c,48));button.setOnClickListener(action);
         LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);params.topMargin=dp(c,8);root.addView(button,params);return button;
     }
     static LinearLayout actions(Context c,LinearLayout root){LinearLayout row=new LinearLayout(c);row.setGravity(Gravity.CENTER_VERTICAL);root.addView(row,new LinearLayout.LayoutParams(-1,-2));return row;}

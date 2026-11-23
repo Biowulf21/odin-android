@@ -99,12 +99,9 @@ final class EdgeSettings {
         int padding = Ui.dp(activity, 20);
         page.setPadding(padding, padding, padding, Ui.dp(activity, 24));
         Ui.heading(activity, page, "Edge swipe mappings");
-        Ui.text(activity, page, "Assign an action or sequence to each direction. The handles are invisible during use.", 14, true);
-
         LinearLayout setup = Ui.card(activity, page);
         setupCard = (View) setup.getParent();
-        Ui.text(activity, setup, "Enable the edge swipe service", 16, false);
-        Ui.text(activity, setup, "In Accessibility, turn on Odin edge swipes.", 14, true);
+        Ui.text(activity, setup, "Turn on Odin edge swipes in Android Accessibility.", 14, false);
         Ui.button(activity, setup, "Open Accessibility settings", true, view ->
             activity.startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
 
@@ -135,6 +132,7 @@ final class EdgeSettings {
         button.setId(View.generateViewId());
         button.setText(title);
         button.setAllCaps(false);
+        button.setCornerRadius(Ui.dp(activity, 8));
         button.setMinHeight(Ui.dp(activity, 48));
         group.addView(button, new LinearLayout.LayoutParams(0, -2, 1));
         return button;
@@ -250,13 +248,16 @@ final class EdgeSettings {
         LinearLayout body = Ui.column(activity);
         int padding = Ui.dp(activity, 24);
         body.setPadding(padding, Ui.dp(activity, 4), padding, padding);
-        Ui.text(activity, body, "Drag inward. The vibration tells you when to release.", 14, true);
+        Ui.text(activity, body, "Drag from the dot. The dashed line marks the release point.", 14, true);
         FrameLayout stage = new FrameLayout(activity);
         android.graphics.drawable.GradientDrawable surface = new android.graphics.drawable.GradientDrawable();
-        surface.setCornerRadius(Ui.dp(activity, 14));
+        surface.setCornerRadius(Ui.dp(activity, 10));
+        surface.setStroke(Ui.dp(activity, 1), Ui.color(activity, com.google.android.material.R.attr.colorOutlineVariant));
         surface.setColor(Ui.color(activity, com.google.android.material.R.attr.colorSurface));
         stage.setBackground(surface);
-        body.addView(stage, new LinearLayout.LayoutParams(-1, Ui.dp(activity, 114)));
+        body.addView(stage, new LinearLayout.LayoutParams(-1, Ui.dp(activity, 152)));
+        IndicatorGuide guide = new IndicatorGuide(left);
+        stage.addView(guide, new FrameLayout.LayoutParams(-1, -1));
         ImageView chevron = new ImageView(activity);
         stage.addView(chevron, new FrameLayout.LayoutParams(0, 0));
         Runnable preview = () -> {
@@ -267,6 +268,7 @@ final class EdgeSettings {
             styleIndicator(chevron, left, prefs.getInt(EdgeSwipe.INDICATOR_COLOR_KEY, EdgeSwipe.INDICATOR_COLOR));
             chevron.setX(left ? Ui.dp(activity, 8) : Math.max(0, stage.getWidth() - size - Ui.dp(activity, 8)));
             chevron.setY(Math.max(0, (stage.getHeight() - size) / 2f));
+            guide.invalidate();
         };
         stage.addOnLayoutChangeListener((v, l, t, r, b, oldL, oldT, oldR, oldB) -> preview.run());
         stage.setOnTouchListener(new View.OnTouchListener() {
@@ -280,6 +282,7 @@ final class EdgeSettings {
                         stroke = newStroke(activity, prefs, left);
                         startX = event.getX();
                         startY = event.getY();
+                        guide.setOrigin(startX, startY);
                         updateIndicator(chevron, left, 0, false);
                         return true;
                     case MotionEvent.ACTION_MOVE:
@@ -297,6 +300,7 @@ final class EdgeSettings {
                     case MotionEvent.ACTION_UP:
                     case MotionEvent.ACTION_CANCEL:
                         stroke = null;
+                        guide.clearOrigin();
                         preview.run();
                         return true;
                     default:
@@ -308,7 +312,6 @@ final class EdgeSettings {
             EdgeSwipe.ACTIVATION_DISTANCE, preview);
         slider(body, EdgeSwipe.DIRECTION_BUFFER_KEY, "Direction buffer", " dp",
             EdgeSwipe.MIN_DIRECTION_BUFFER, EdgeSwipe.MAX_DIRECTION_BUFFER, EdgeSwipe.DIRECTION_BUFFER, preview);
-        Ui.text(activity, body, "A larger buffer keeps the swipe straight through more vertical movement.", 13, true);
         slider(body, EdgeSwipe.INDICATOR_SIZE_KEY, "Size", " dp", 16, 52, EdgeSwipe.INDICATOR_SIZE, preview);
         MaterialButton color = Ui.button(activity, body, "Color", false, view ->
             showIndicatorColor(preview, (MaterialButton) view));
@@ -317,6 +320,74 @@ final class EdgeSettings {
         scroll.addView(body);
         new MaterialAlertDialogBuilder(activity).setTitle("Swipe indicator")
             .setView(scroll).setPositiveButton("Done", null).show();
+    }
+
+    private final class IndicatorGuide extends View {
+        private final boolean left;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final android.graphics.DashPathEffect dashed;
+        private final int borderColor, labelColor, accentColor;
+        private float startX, startY;
+        private boolean dragging;
+
+        IndicatorGuide(boolean left) {
+            super(activity);
+            this.left = left;
+            int dash = Ui.dp(activity, 4);
+            dashed = new android.graphics.DashPathEffect(new float[]{dash, dash}, 0);
+            borderColor = Ui.color(activity, com.google.android.material.R.attr.colorOutlineVariant);
+            labelColor = Ui.color(activity, com.google.android.material.R.attr.colorOnSurfaceVariant);
+            accentColor = Ui.color(activity, androidx.appcompat.R.attr.colorPrimary);
+            paint.setTextSize(android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP,
+                12, getResources().getDisplayMetrics()));
+            setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+
+        void setOrigin(float x, float y) {
+            startX = x;
+            startY = y;
+            dragging = true;
+            invalidate();
+        }
+
+        void clearOrigin() {
+            dragging = false;
+            invalidate();
+        }
+
+        @Override protected void onDraw(Canvas canvas) {
+            int margin = Ui.dp(activity, 12);
+            float width = getWidth();
+            float height = getHeight();
+            float x = dragging ? startX : left ? margin : width - margin;
+            float y = dragging ? startY : height / 2f;
+            int buffer = Ui.dp(activity, prefs.getInt(EdgeSwipe.DIRECTION_BUFFER_KEY, EdgeSwipe.DIRECTION_BUFFER));
+            int distance = Ui.dp(activity, prefs.getInt(EdgeSwipe.ACTIVATION_DISTANCE_KEY, EdgeSwipe.ACTIVATION_DISTANCE));
+            float release = x + (left ? distance : -distance);
+            paint.setColor(borderColor);
+            paint.setAlpha(46);
+            canvas.drawRect(1, Math.max(1, y - buffer), width - 1, Math.min(height - 1, y + buffer), paint);
+            paint.setColor(borderColor);
+            paint.setStrokeWidth(Ui.dp(activity, 1));
+            canvas.drawLine(1, y - buffer, width - 1, y - buffer, paint);
+            canvas.drawLine(1, y + buffer, width - 1, y + buffer, paint);
+            paint.setColor(accentColor);
+            paint.setPathEffect(dashed);
+            canvas.drawLine(release, margin, release, height - margin, paint);
+            paint.setPathEffect(null);
+            paint.setColor(labelColor);
+            canvas.drawCircle(x, y, Ui.dp(activity, 3), paint);
+            paint.setTextAlign(left ? Paint.Align.RIGHT : Paint.Align.LEFT);
+            float labelX = left ? width - margin : margin;
+            drawZone(canvas, "Up", labelX, 0, Math.max(0, y - buffer));
+            drawZone(canvas, "Straight", labelX, Math.max(0, y - buffer), Math.min(height, y + buffer));
+            drawZone(canvas, "Down", labelX, Math.min(height, y + buffer), height);
+        }
+
+        private void drawZone(Canvas canvas, String label, float x, float top, float bottom) {
+            if (bottom - top < paint.getTextSize() + Ui.dp(activity, 4)) return;
+            canvas.drawText(label, x, (top + bottom - paint.ascent() - paint.descent()) / 2, paint);
+        }
     }
 
     private void showColorOn(MaterialButton button) {

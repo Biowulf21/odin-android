@@ -8,7 +8,7 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
-import android.graphics.drawable.InsetDrawable;
+import android.graphics.drawable.StateListDrawable;
 import android.graphics.Typeface;
 import android.text.Editable;
 import android.text.TextWatcher;
@@ -116,18 +116,12 @@ final class ChoicePicker {
         sheet = new BottomSheetDialog(context);
         sheet.setDismissWithAnimation(true);
         LinearLayout body = Ui.column(context);
-        body.setPadding(dp(18), dp(12), dp(18), dp(14));
+        body.setPadding(dp(20), dp(12), dp(20), dp(12));
         body.setFocusableInTouchMode(true);
-        View handle = new View(context);
-        handle.setBackground(rounded(0xffa6a19d, 2));
-        LinearLayout.LayoutParams grip = new LinearLayout.LayoutParams(dp(34), dp(4));
-        grip.gravity = Gravity.CENTER_HORIZONTAL;
-        grip.bottomMargin = dp(12);
-        body.addView(handle, grip);
         LinearLayout heading = Ui.actions(context, body);
         gesture = new TextView(context);
         gesture.setText(title);
-        gesture.setTextSize(28);
+        gesture.setTextSize(22);
         gesture.setTypeface(null, Typeface.BOLD);
         heading.addView(gesture, new LinearLayout.LayoutParams(0, -2, 1));
         back = Ui.navigationButton(context);
@@ -144,21 +138,15 @@ final class ChoicePicker {
         int accent = Ui.color(context, androidx.appcompat.R.attr.colorPrimary);
         int surface = Ui.color(context, com.google.android.material.R.attr.colorSurfaceContainer);
         tabs = new TabLayout(context);
-        tabs.setBackground(rounded(surface, 24));
         tabs.setTabMode(TabLayout.MODE_FIXED);
         tabs.setTabGravity(TabLayout.GRAVITY_FILL);
-        tabs.setTabIndicatorFullWidth(true);
-        tabs.setTabRippleColor(null);
-        tabs.setSelectedTabIndicator(new InsetDrawable(rounded(accent, 22), dp(4)));
+        tabs.setTabIndicatorFullWidth(false);
         tabs.setSelectedTabIndicatorColor(accent);
-        tabs.setSelectedTabIndicatorGravity(TabLayout.INDICATOR_GRAVITY_STRETCH);
-        tabs.setTabTextColors(Ui.color(context, com.google.android.material.R.attr.colorOnSurfaceVariant),
-            Ui.color(context, com.google.android.material.R.attr.colorOnPrimary));
+        tabs.setTabTextColors(Ui.color(context, com.google.android.material.R.attr.colorOnSurfaceVariant), accent);
         tabs.addTab(tabs.newTab().setText("Special actions"));
         tabs.addTab(tabs.newTab().setText("Apps"));
         LinearLayout.LayoutParams segment = new LinearLayout.LayoutParams(-1, dp(48));
-        segment.topMargin = dp(6);
-        segment.bottomMargin = dp(12);
+        segment.bottomMargin = dp(8);
         body.addView(tabs, segment);
         if (mode != Mode.BUTTON) tabs.setVisibility(View.GONE);
         legend = Ui.text(context, body, "Offers an action you can use while locked", 14, false);
@@ -171,7 +159,14 @@ final class ChoicePicker {
         search.setSingleLine();
         search.setHint(mode == Mode.STEP ? "Search actions" : "Search apps");
         search.setTextSize(16);
-        search.setBackground(rounded(surface, 16));
+        GradientDrawable focused = rounded(surface, 8);
+        focused.setStroke(dp(1), accent);
+        StateListDrawable searchBackground = new StateListDrawable();
+        searchBackground.addState(new int[]{android.R.attr.state_focused}, focused);
+        searchBackground.addState(new int[0], rounded(surface, 8));
+        search.setBackground(searchBackground);
+        search.setImeOptions(android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI
+            | android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
         search.setPadding(dp(16), 0, dp(16), 0);
         Drawable lens = context.getDrawable(android.R.drawable.ic_menu_search).mutate();
         lens.setTint(Ui.color(context, com.google.android.material.R.attr.colorOnSurfaceVariant));
@@ -184,16 +179,19 @@ final class ChoicePicker {
         list = new ListView(context);
         list.setNestedScrollingEnabled(true);
         sheet.getBehavior().setDraggableOnNestedScroll(false);
-        list.setBackground(rounded(surface, 20));
-        list.setClipToOutline(true);
         list.setDivider(null);
         list.setDrawSelectorOnTop(true);
         list.setAdapter(rows);
-        int height = Math.min(dp(340), context.getResources().getDisplayMetrics().heightPixels / 3);
-        LinearLayout.LayoutParams results = new LinearLayout.LayoutParams(-1, height);
-        results.weight = 1;
-        body.addView(list, results);
-        empty = Ui.text(context, body, "", 16, true);
+        FrameLayout results = new FrameLayout(context);
+        int height = Math.min(dp(400), Math.round(context.getResources().getDisplayMetrics().heightPixels * .42f));
+        body.addView(results, new LinearLayout.LayoutParams(-1, height, 1));
+        results.addView(list, new FrameLayout.LayoutParams(-1, -1));
+        empty = new TextView(context);
+        empty.setTextSize(14);
+        empty.setPadding(dp(8), dp(14), dp(8), 0);
+        empty.setTextColor(Ui.color(context, com.google.android.material.R.attr.colorOnSurfaceVariant));
+        empty.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        results.addView(empty, new FrameLayout.LayoutParams(-1, -2));
         saveFan = Ui.button(context, body, "Save", true, v -> {
             String target = "fan:" + String.join(",", fanSelection);
             if (Options.fanApps(target) != null) finish(new Targets.Choice(Targets.label(context, target), target));
@@ -202,7 +200,10 @@ final class ChoicePicker {
         search.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             public void afterTextChanged(Editable value) {}
-            public void onTextChanged(CharSequence s, int start, int before, int count) { refresh(); }
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                refresh();
+                list.setSelection(0);
+            }
         });
         tabs.addOnTabSelectedListener(new TabLayout.OnTabSelectedListener() {
             public void onTabSelected(TabLayout.Tab tab) {
@@ -215,6 +216,7 @@ final class ChoicePicker {
             public void onTabReselected(TabLayout.Tab tab) {}
         });
         sheet.setContentView(body);
+        sheet.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         if (mode != Mode.STEP) tabs.selectTab(tabs.getTabAt(1));
         refresh();
         sheet.getBehavior().setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED);
@@ -332,7 +334,7 @@ final class ChoicePicker {
         }
         empty.setText(loading ? "Loading apps…" : browsingApps ? "No matching apps" : "No matching actions");
         empty.setVisibility(visible.isEmpty() ? View.VISIBLE : View.GONE);
-        list.setVisibility(visible.isEmpty() ? View.GONE : View.VISIBLE);
+        list.setVisibility(visible.isEmpty() ? View.INVISIBLE : View.VISIBLE);
         rows.notifyDataSetChanged();
     }
 
@@ -457,7 +459,6 @@ final class ChoicePicker {
     }
 
     private void showStep(int step) {
-        boolean forward = step > mediaStep;
         mediaStep = step;
         gesture.setText(step == 0 ? gestureTitle : step == 1 ? "If media is playing" : "Otherwise");
         back.setContentDescription(step == 0 ? "Back to gestures" : step == 1 ? "Back to actions" : "Back to playback action");
@@ -469,9 +470,6 @@ final class ChoicePicker {
             if (!(visible.get(i) instanceof Heading) && Objects.equals(visible.get(i).choice.target, selected)) position = i;
         }
         list.setSelection(position);
-        list.animate().cancel();
-        list.setTranslationX((forward ? 1 : -1) * list.getWidth());
-        list.animate().translationX(0).setDuration(180).start();
         gesture.announceForAccessibility(gesture.getText());
     }
 
@@ -548,9 +546,10 @@ final class ChoicePicker {
             if (entry instanceof Heading) {
                 TextView heading = recycled == null ? new TextView(context) : (TextView) recycled;
                 heading.setText(entry.title);
-                heading.setTextSize(14);
+                heading.setTextSize(13);
                 heading.setTypeface(null, Typeface.BOLD);
-                heading.setPadding(dp(16), dp(12), dp(16), dp(4));
+                heading.setTextColor(Ui.color(context, com.google.android.material.R.attr.colorOnSurfaceVariant));
+                heading.setPadding(dp(8), dp(12), dp(8), dp(4));
                 heading.setAccessibilityHeading(true);
                 return heading;
             }
@@ -559,17 +558,17 @@ final class ChoicePicker {
                 row = new LinearLayout(context);
                 row.setGravity(Gravity.CENTER_VERTICAL);
                 row.setMinimumHeight(dp(52));
-                row.setPadding(dp(16), dp(4), dp(16), dp(4));
-                row.addView(new ImageView(context), new LinearLayout.LayoutParams(dp(28), dp(28)));
+                row.setPadding(dp(8), dp(4), dp(8), dp(4));
+                row.addView(new ImageView(context), new LinearLayout.LayoutParams(dp(24), dp(24)));
                 TextView label = new TextView(context);
-                label.setPadding(dp(14), 0, dp(8), 0);
+                label.setPadding(dp(12), 0, dp(8), 0);
                 label.setTextSize(16);
                 row.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
-                TextView check = new TextView(context);
-                check.setText("✓");
-                check.setTextSize(21);
-                check.setTextColor(Ui.color(context, androidx.appcompat.R.attr.colorPrimary));
-                row.addView(check);
+                ImageView check = new ImageView(context);
+                check.setImageResource(R.drawable.ic_selected);
+                check.setColorFilter(Ui.color(context, androidx.appcompat.R.attr.colorPrimary));
+                check.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+                row.addView(check, new LinearLayout.LayoutParams(dp(20), dp(20)));
                 ImageView lock = new ImageView(context);
                 lock.setImageResource(R.drawable.ic_locked_action);
                 lock.setColorFilter(Ui.color(context, androidx.appcompat.R.attr.colorPrimary));

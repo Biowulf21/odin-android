@@ -47,7 +47,6 @@ final class ChainEditor {
         LinearLayout body = Ui.column(context);
         int padding = Ui.dp(context, 24);
         body.setPadding(padding, 0, padding, Ui.dp(context, 8));
-        Ui.text(context, body, "Actions run in order. Add one or build a sequence.", 14, true);
         ScrollView scroll = new ScrollView(context) {
             @Override protected void onMeasure(int widthSpec, int heightSpec) {
                 int limit = Math.round(getResources().getDisplayMetrics().heightPixels * .34f);
@@ -70,6 +69,7 @@ final class ChainEditor {
         alternative.setText(alternativesLabel);
         alternative.setAllCaps(false);
         alternative.setMinHeight(Ui.dp(context, 48));
+        alternative.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
         alternative.setOnClickListener(v -> chooseAlternative.accept(this::close));
         body.addView(alternative, new LinearLayout.LayoutParams(-1, -2));
 
@@ -115,7 +115,7 @@ final class ChainEditor {
         dialog.getButton(DialogInterface.BUTTON_POSITIVE).setEnabled(!steps.isEmpty() || clearOnEmpty);
         if (steps.isEmpty()) {
             if (standalone == null) {
-                Ui.text(context, rows, "No actions in the sequence", 16, true);
+                Ui.text(context, rows, "No actions assigned", 14, true);
             } else {
                 Ui.text(context, rows, "Current mapping", 13, true);
                 Ui.text(context, rows, Targets.label(context, standalone), 16, false);
@@ -133,7 +133,7 @@ final class ChainEditor {
         row.setMinimumHeight(Ui.dp(context, 52));
         TextView number = new TextView(context);
         number.setText(String.valueOf(index + 1));
-        number.setTextColor(Ui.color(context, androidx.appcompat.R.attr.colorPrimary));
+        number.setTextColor(Ui.color(context, com.google.android.material.R.attr.colorOnSurfaceVariant));
         number.setTextSize(13);
         number.setTypeface(null, Typeface.BOLD);
         number.setGravity(Gravity.CENTER);

@@ -41,7 +41,8 @@ public final class MainActivity extends AppCompatActivity {
     private FrameLayout pageHost;
     private NestedScrollView pageScroll;
     private LinearLayout buttonPage;
-    private ImageButton settingsButton;
+    private ImageButton settingsButton, backButton;
+    private TextView toolbarTitle;
     private TabLayout destinations;
     private EdgeSettings edges;
     private int activeDestination;
@@ -117,18 +118,25 @@ public final class MainActivity extends AppCompatActivity {
         LinearLayout window = Ui.column(this);
         LinearLayout header = Ui.actions(this, window);
         header.setPadding(dp(20), dp(8), dp(12), dp(8));
-        TextView title = new TextView(this);
-        title.setText(R.string.app_name);
-        title.setTextSize(30);
-        title.setTypeface(null, Typeface.BOLD);
-        title.setTextColor(Ui.color(this, com.google.android.material.R.attr.colorOnSurface));
-        header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        backButton = Ui.navigationButton(this);
+        backButton.setImageResource(R.drawable.ic_back);
+        backButton.setContentDescription("Back");
+        backButton.setPadding(dp(12), dp(12), dp(12), dp(12));
+        backButton.setOnClickListener(v -> returnToMain());
+        LinearLayout.LayoutParams backSize = new LinearLayout.LayoutParams(dp(48), dp(48));
+        backSize.setMarginEnd(dp(4));
+        header.addView(backButton, backSize);
+        toolbarTitle = new TextView(this);
+        toolbarTitle.setTextSize(26);
+        toolbarTitle.setTypeface(null, Typeface.BOLD);
+        toolbarTitle.setTextColor(Ui.color(this, com.google.android.material.R.attr.colorOnSurface));
+        header.addView(toolbarTitle, new LinearLayout.LayoutParams(0, -2, 1));
         settingsButton = Ui.navigationButton(this);
+        settingsButton.setPadding(dp(11), dp(11), dp(11), dp(11));
+        settingsButton.setImageResource(R.drawable.ic_settings);
+        settingsButton.setContentDescription("Settings");
+        settingsButton.setOnClickListener(v -> showSettings());
         header.addView(settingsButton, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        settingsButton.setOnClickListener(v -> {
-            if (settingsBack.isEnabled()) returnToMain();
-            else showSettings();
-        });
         addGlobalStatus(window);
         destinations = new TabLayout(this);
         destinations.setTabMode(TabLayout.MODE_FIXED);
@@ -164,12 +172,15 @@ public final class MainActivity extends AppCompatActivity {
         });
         getOnBackPressedDispatcher().addCallback(this, settingsBack);
         updateNavigation(false);
-        window.setOnApplyWindowInsetsListener((view, insets) -> {
+        FrameLayout frame = new FrameLayout(this);
+        int width = getResources().getConfiguration().screenWidthDp > 600 ? dp(600) : -1;
+        frame.addView(window, new FrameLayout.LayoutParams(width, -1, Gravity.TOP | Gravity.CENTER_HORIZONTAL));
+        frame.setOnApplyWindowInsetsListener((view, insets) -> {
             android.graphics.Insets bars = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
             return insets;
         });
-        setContentView(window);
+        setContentView(frame);
         showSelections();
     }
 
@@ -177,14 +188,27 @@ public final class MainActivity extends AppCompatActivity {
         LinearLayout strip = Ui.column(this);
         strip.setPadding(dp(20), 0, dp(20), dp(6));
         window.addView(strip, new LinearLayout.LayoutParams(-1, -2));
-        status = Ui.text(this, strip, "Button helper · Checking…", 14, false);
+        LinearLayout row = Ui.actions(this, strip);
+        status = Ui.text(this, row, "Button helper · Checking…", 14, false);
+        status.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1));
         statusDot.setShape(GradientDrawable.OVAL);
         statusDot.setSize(dp(8), dp(8));
         statusDot.setColor(STATUS_AMBER);
         status.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
         status.setCompoundDrawablePadding(dp(8));
         status.setCompoundDrawablesRelativeWithIntrinsicBounds(statusDot, null, null, null);
+        start = helperControl(row, "Start", v -> startHelper());
+        stop = helperControl(row, "Stop", v -> {
+            if (wireless.busy.get()) return;
+            try {
+                wireless.prefs().edit().putBoolean("user_stopped", true).apply();
+                mailbox.requestStop();
+                setStatus("Stopping…", STATUS_AMBER);
+            } catch (IOException error) { toast("Could not stop. Try again."); }
+        });
+        finishSetup = helperControl(row, "Set up button", v -> setup.show());
         detail = Ui.text(this, strip, "", 13, true);
+        detail.setVisibility(View.GONE);
         progress = new LinearProgressIndicator(this);
         progress.setIndeterminate(true);
         progress.setVisibility(View.GONE);
@@ -192,11 +216,22 @@ public final class MainActivity extends AppCompatActivity {
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
     }
 
+    private MaterialButton helperControl(LinearLayout row, String label, View.OnClickListener click) {
+        MaterialButton button = new MaterialButton(this, null, androidx.appcompat.R.attr.borderlessButtonStyle);
+        button.setText(label);
+        button.setAllCaps(false);
+        button.setTextSize(14);
+        button.setMinHeight(dp(48));
+        button.setVisibility(View.GONE);
+        button.setOnClickListener(click);
+        row.addView(button, new LinearLayout.LayoutParams(-2, -2));
+        return button;
+    }
+
     private LinearLayout buildButtonPage() {
         LinearLayout content = Ui.column(this);
         content.setPadding(dp(20), dp(20), dp(20), dp(24));
         Ui.heading(this, content, "Button mappings");
-        Ui.text(this, content, "Tap a press to assign one or more actions.", 14, true);
         LinearLayout mappings = Ui.card(this, content);
         mappings.setPadding(dp(12), dp(4), dp(12), dp(4));
         addPressRow(mappings, KeyPress.SHORT, "Short press", null);
@@ -218,20 +253,6 @@ public final class MainActivity extends AppCompatActivity {
         Ui.text(this, longPressSetup, LONG_PRESS_SETUP_HINT, 14, true);
         Ui.button(this, longPressSetup, "Open OnePlus settings", false, v -> onePlusSettings());
 
-        LinearLayout connection = Ui.card(this, content);
-        Ui.text(this, connection, "Button connection", 16, false);
-        LinearLayout controls = Ui.actions(this, connection);
-        start = Ui.button(this, controls, "Start", true, v -> startHelper());
-        stop = Ui.button(this, controls, "Stop", false, v -> {
-            if (wireless.busy.get()) return;
-            try {
-                wireless.prefs().edit().putBoolean("user_stopped", true).apply();
-                mailbox.requestStop();
-                setStatus("Stopping…", STATUS_AMBER);
-            } catch (IOException error) { toast("Could not stop. Try again."); }
-        });
-        finishSetup = Ui.button(this, controls, "Set up button", true, v -> setup.show());
-        Ui.equal(this, controls);
         return content;
     }
 
@@ -265,16 +286,15 @@ public final class MainActivity extends AppCompatActivity {
         previousScroll = pageScroll.getScrollY();
         LinearLayout body = Ui.column(this);
         body.setPadding(dp(20), dp(20), dp(20), dp(24));
-        TextView title = Ui.text(this, body, includeConnection ? "Settings" : "Press timing", 30, false);
-        title.setTypeface(null, Typeface.BOLD);
+        String title = includeConnection ? "Settings" : "Press timing";
         LinearLayout timing = Ui.card(this, body);
         Ui.text(this, timing, includeConnection ? "Press timing" : "Maximum gap between presses", 19, false)
             .setTypeface(null, Typeface.BOLD);
         if (includeConnection) Ui.text(this, timing, "Maximum gap between presses", 15, true);
         int interval = mailbox.clickInterval();
-        TextView value = Ui.text(this, timing, interval + " ms", 36, false);
+        TextView value = Ui.text(this, timing, interval + " ms", 20, false);
         value.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        value.setTextColor(Ui.color(this, androidx.appcompat.R.attr.colorPrimary));
+
         Slider slider = new Slider(this);
         slider.setContentDescription("Maximum gap between presses");
         slider.setValueFrom(Mailbox.MIN_CLICK_INTERVAL_MS);
@@ -334,15 +354,16 @@ public final class MainActivity extends AppCompatActivity {
         }
         settingsBack.setEnabled(true);
         updateNavigation(true);
+        toolbarTitle.setText(title);
         showPage(body);
         pageScroll.scrollTo(0, 0);
-        androidx.core.view.ViewCompat.setAccessibilityPaneTitle(body, title.getText());
+        androidx.core.view.ViewCompat.setAccessibilityPaneTitle(body, title);
     }
 
     private void updateNavigation(boolean settingsOpen) {
-        settingsButton.setPadding(dp(11), dp(11), dp(11), dp(11));
-        settingsButton.setImageResource(settingsOpen ? R.drawable.ic_back : R.drawable.ic_settings);
-        settingsButton.setContentDescription(settingsOpen ? "Back" : "Settings");
+        settingsButton.setVisibility(settingsOpen ? View.GONE : View.VISIBLE);
+        backButton.setVisibility(settingsOpen ? View.VISIBLE : View.GONE);
+        if (!settingsOpen) toolbarTitle.setText(R.string.app_name);
         destinations.setVisibility(settingsOpen ? View.GONE : View.VISIBLE);
     }
 
@@ -544,10 +565,11 @@ public final class MainActivity extends AppCompatActivity {
                     preview.setText(openSettings ? "OnePlus settings" : "Preview");
                     preview.setContentDescription(openSettings ? "Open OnePlus settings" : "Preview Long press");
                     preview.setEnabled(!showSetup);
+                    preview.setVisibility(showSetup ? View.GONE : View.VISIBLE);
                     preview.setOnClickListener(v -> {if (openSettings) onePlusSettings(); else preview(KeyPress.LONG);});
                     longPressSetupCard.setVisibility(showSetup ? View.VISIBLE : View.GONE);
                 } else {
-                    preview.setEnabled(target != null);
+                    preview.setVisibility(target == null ? View.GONE : View.VISIBLE);
                 }
             }
         } catch (IOException error) {toast("Choose an action again");}
@@ -659,31 +681,31 @@ public final class MainActivity extends AppCompatActivity {
         progress.setVisibility(busy ? View.VISIBLE : View.GONE);
         start.setVisibility(!ready && !busy && configured ? View.VISIBLE : View.GONE);
         stop.setVisibility(ready && !busy ? View.VISIBLE : View.GONE);
-        finishSetup.setVisibility(!ready && !busy ? View.VISIBLE : View.GONE);
-        setTextIfChanged(finishSetup, configured ? "Fix setup" : "Set up button");
+        finishSetup.setVisibility(!ready && !configured && !busy ? View.VISIBLE : View.GONE);
         if (busy) {
             setStatus("Starting…", STATUS_AMBER);
-            setTextIfChanged(detail, wireless.message);
+            setStatusDetail(wireless.message);
         } else if (ready) {
             String[] fields = current.split("\\|", 3);
             boolean failed = fields.length == 3 && (fields[2].startsWith("Launch failed") || fields[2].startsWith("Long press needs"));
             setStatus(failed ? "Action needs attention" : "Active", failed ? STATUS_RED : STATUS_GREEN);
-            setTextIfChanged(detail, failed ? fields[2] : wireless.automatic() && !ShizukuConnection.authorized() ? "Automatic startup on" : "Your actions are ready.");
+            setStatusDetail(failed ? fields[2] : wireless.automatic() && !ShizukuConnection.authorized() ? "Automatic startup on" : "");
         } else if (wireless.prefs().getBoolean("user_stopped", false)) {
             setStatus("Stopped", STATUS_GRAY);
-            setTextIfChanged(detail, "Tap Start when you’re ready.");
+            setStatusDetail("");
         } else if (current != null && current.startsWith("Error|")) {
             setStatus("Needs attention", STATUS_RED);
-            setTextIfChanged(detail, current.split("\\|", 3)[2]);
+            setStatusDetail(current.split("\\|", 3)[2]);
         } else {
             setStatus(configured ? "Not running" : "Setup needed", configured ? STATUS_GRAY : STATUS_AMBER);
-            String message = wireless.message;
-            if (!message.startsWith("Setup needed:")) {
-                message = configured ? "Tap Start to reconnect your button." : "Connect the button to run these mappings.";
-            }
-            setTextIfChanged(detail, message);
+            setStatusDetail(wireless.message.startsWith("Setup needed:") ? wireless.message : "");
         }
     }
+    private void setStatusDetail(String message) {
+        setTextIfChanged(detail, message);
+        detail.setVisibility(message.isEmpty() ? View.GONE : View.VISIBLE);
+    }
+
     private void setStatus(String label, int color) {
         if (statusDot.getColor().getDefaultColor() != color) statusDot.setColor(color);
         setTextIfChanged(status, "Button helper · " + label);

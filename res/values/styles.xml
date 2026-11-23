@@ -8,6 +8,14 @@
         <item name="colorSurfaceContainer">#292726</item>
         <item name="android:windowBackground">#171616</item>
         <item name="android:fontFamily">sans</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.Odin.Dialog</item>
         <item name="android:windowLightStatusBar">?attr/isLightTheme</item>
+    </style>
+    <style name="ThemeOverlay.Odin.Dialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="alertDialogStyle">@style/MaterialAlertDialog.Odin</item>
+    </style>
+
+    <style name="MaterialAlertDialog.Odin" parent="MaterialAlertDialog.Material3">
+        <item name="shapeAppearance">@style/ShapeAppearance.Material3.Corner.Medium</item>
     </style>
 </resources>
