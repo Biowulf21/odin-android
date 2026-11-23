@@ -303,7 +303,7 @@ public final class Helper {
                 last = "Long press needs OnePlus action set to Do nothing";
                 return;
             }
-            if (target == null) throw new IOException("No app selected; open Plus Key and choose an app");
+            if (target == null) throw new IOException("No app selected; open Odin and choose an app");
             if (!preview && pendingUnlock != null) pendingUnlock.finish();
             String assignment = target;
             if (target.startsWith("hold:")) {

@@ -32,7 +32,7 @@ final class Updates {
   if(manual)toast("Checking for updates…");
   worker.execute(()->{
    try{
-    HttpURLConnection connection=connect("https://api.github.com/repos/James-Slot-app/PlusKey/releases/latest");
+    HttpURLConnection connection=connect("https://api.github.com/repos/" + UpdatePolicy.REPOSITORY + "/releases/latest");
     String json;
     try{int status=connection.getResponseCode();if(status==404){prefs().edit().putLong("checked",System.currentTimeMillis()).apply();if(manual)toast("No published release yet");return;}if(status!=200)throw new IOException("Release check unavailable");json=read(connection,1048576);}finally{connection.disconnect();}
     JSONObject release=new JSONObject(json);prefs().edit().putLong("checked",System.currentTimeMillis()).apply();
@@ -44,7 +44,7 @@ final class Updates {
     String url=apk.getString("browser_download_url"),digest=apk.optString("digest");
     if(!digest.matches("sha256:[a-fA-F0-9]{64}"))throw new IOException("Release checksum unavailable");
     final String checksum=digest.substring(7),version=release.getString("tag_name");
-    ui(()->new MaterialAlertDialogBuilder(activity).setTitle("PlusKey "+version+" available")
+    ui(()->new MaterialAlertDialogBuilder(activity).setTitle("Odin "+version+" available")
       .setMessage("Download update from GitHub? Android will ask you before installing.")
       .setNegativeButton("Later",null).setPositiveButton("Download",(d,w)->download(url,checksum)).show());
    }catch(Exception error){if(manual)toast("Could not check updates. Try again later.");}
@@ -87,7 +87,7 @@ final class Updates {
   if(pending==null)return;
   if(!activity.getPackageManager().canRequestPackageInstalls()){
    new MaterialAlertDialogBuilder(activity).setTitle("Allow app updates")
-    .setMessage("On next screen, allow Plus Key to install updates. Android will still ask before each installation.")
+    .setMessage("On next screen, allow Odin to install updates. Android will still ask before each installation.")
     .setNegativeButton("Later",(d,w)->pending=null).setPositiveButton("Open settings",(d,w)->{
      try{activity.startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+activity.getPackageName())));}catch(Exception error){pending=null;toast("Open app’s install permission in phone Settings");}
     }).show();return;
@@ -108,7 +108,7 @@ final class Updates {
  void close(){worker.shutdown();}
  private static HttpURLConnection connect(String url)throws Exception{
   if(!url.startsWith("https://"))throw new SecurityException("HTTPS required");
-  HttpURLConnection connection=(HttpURLConnection)new URL(url).openConnection();connection.setConnectTimeout(15000);connection.setReadTimeout(20000);connection.setRequestProperty("User-Agent","PlusKey-Android");connection.setRequestProperty("Accept","application/vnd.github+json");return connection;
+  HttpURLConnection connection=(HttpURLConnection)new URL(url).openConnection();connection.setConnectTimeout(15000);connection.setReadTimeout(20000);connection.setRequestProperty("User-Agent","Odin-Android");connection.setRequestProperty("Accept","application/vnd.github+json");return connection;
  }
  private static String read(HttpURLConnection connection,int limit)throws Exception{
   try(InputStream input=connection.getInputStream();ByteArrayOutputStream output=new ByteArrayOutputStream()){

@@ -38,7 +38,7 @@ final class AdbIdentity extends AbsAdbConnectionManager {
             generator.initialize(2048);
             java.security.KeyPair pair = generator.generateKeyPair();
             privateKey = pair.getPrivate();
-            X500Principal name = new X500Principal("CN=Plus Key");
+            X500Principal name = new X500Principal("CN=Odin");
             long now = System.currentTimeMillis();
             byte[] encoded = new JcaX509v3CertificateBuilder(name, new BigInteger(128, new SecureRandom()),
                 new Date(now - 86400000L), new Date(now + 315360000000L), name, pair.getPublic())
@@ -54,5 +54,5 @@ final class AdbIdentity extends AbsAdbConnectionManager {
     }
     protected PrivateKey getPrivateKey() { return privateKey; }
     protected Certificate getCertificate() { return certificate; }
-    protected String getDeviceName() { return "Plus Key"; }
+    protected String getDeviceName() { return "Odin"; }
 }

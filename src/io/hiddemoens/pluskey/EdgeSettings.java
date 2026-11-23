@@ -73,7 +73,7 @@ final class EdgeSettings {
     static EdgeSwipe.Stroke newStroke(Context context, SharedPreferences prefs, boolean left) {
         return new EdgeSwipe.Stroke(left, Ui.dp(context,
             prefs.getInt(EdgeSwipe.ACTIVATION_DISTANCE_KEY, EdgeSwipe.ACTIVATION_DISTANCE)),
-            Ui.dp(context, EdgeSwipe.MAX_DIRECTION_DEAD_ZONE));
+            Ui.dp(context, prefs.getInt(EdgeSwipe.DIRECTION_BUFFER_KEY, EdgeSwipe.DIRECTION_BUFFER)));
     }
 
     static void updateIndicator(ImageView view, boolean left, int direction, boolean ready) {
@@ -104,7 +104,7 @@ final class EdgeSettings {
         LinearLayout setup = Ui.card(activity, page);
         setupCard = (View) setup.getParent();
         Ui.text(activity, setup, "Enable the edge swipe service", 16, false);
-        Ui.text(activity, setup, "In Accessibility, turn on PlusKey edge swipes.", 14, true);
+        Ui.text(activity, setup, "In Accessibility, turn on Odin edge swipes.", 14, true);
         Ui.button(activity, setup, "Open Accessibility settings", true, view ->
             activity.startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
 
@@ -287,7 +287,7 @@ final class EdgeSettings {
                         int size = chevron.getLayoutParams().width;
                         float dx = event.getX() - startX;
                         boolean ready = stroke.canRelease(dx);
-                        updateIndicator(chevron, left, stroke.direction(dx, event.getY() - startY), ready);
+                        updateIndicator(chevron, left, stroke.direction(event.getY() - startY), ready);
                         if (stroke.feedback(ready)) releaseFeedback(stage);
                         chevron.setX(EdgeSwipe.indicatorX(left, Math.round(event.getX()), stage.getWidth(), size,
                             Ui.dp(activity, 10), Ui.dp(activity, 72)));
@@ -306,6 +306,9 @@ final class EdgeSettings {
         });
         slider(body, EdgeSwipe.ACTIVATION_DISTANCE_KEY, "Release distance", " dp", 16, 72,
             EdgeSwipe.ACTIVATION_DISTANCE, preview);
+        slider(body, EdgeSwipe.DIRECTION_BUFFER_KEY, "Direction buffer", " dp",
+            EdgeSwipe.MIN_DIRECTION_BUFFER, EdgeSwipe.MAX_DIRECTION_BUFFER, EdgeSwipe.DIRECTION_BUFFER, preview);
+        Ui.text(activity, body, "A larger buffer keeps the swipe straight through more vertical movement.", 13, true);
         slider(body, EdgeSwipe.INDICATOR_SIZE_KEY, "Size", " dp", 16, 52, EdgeSwipe.INDICATOR_SIZE, preview);
         MaterialButton color = Ui.button(activity, body, "Color", false, view ->
             showIndicatorColor(preview, (MaterialButton) view));

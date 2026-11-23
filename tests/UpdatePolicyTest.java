@@ -6,9 +6,10 @@ public final class UpdatePolicyTest {
   CoreTest.check(!UpdatePolicy.newer("1.3.0","1.3"),"equal release");
   CoreTest.check(!UpdatePolicy.newer("1.2","1.3"),"no downgrade");
   CoreTest.check(!UpdatePolicy.newer("v1.4-beta","1.3"),"no prerelease tags");
-  CoreTest.check(UpdatePolicy.assetUrl("https://github.com/hiddemoens/PlusKey/releases/download/v1.4/PlusKey-1.4.apk"),"own asset");
+  CoreTest.check(UpdatePolicy.assetUrl("https://github.com/James-Slot-app/Odin/releases/download/v1.4/Odin-1.4.apk"),"own asset");
   CoreTest.check(!UpdatePolicy.assetUrl("https://github.com/other/PlusKey/releases/download/v1.4/a.apk"),"reject other repo");
-  CoreTest.check(!UpdatePolicy.assetUrl("http://github.com/hiddemoens/PlusKey/releases/download/v1.4/a.apk"),"require https");
+  CoreTest.check(!UpdatePolicy.assetUrl("http://github.com/James-Slot-app/Odin/releases/download/v1.4/a.apk"),"require https");
+  CoreTest.check(!UpdatePolicy.assetUrl("https://github.com/hiddemoens/PlusKey/releases/download/v1.4/a.apk"),"reject upstream asset");
   System.out.println("Update policy tests passed");
  }
 }

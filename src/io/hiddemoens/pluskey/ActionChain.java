@@ -29,7 +29,7 @@ final class ActionChain {
     static void run(String[] steps, boolean helperAvailable, Step stepRunner) throws Exception {
         if (!helperAvailable) {
             for (String step : steps) {
-                if (!directNavigation(step)) throw new IllegalStateException("Start the Plus Key helper to run this action");
+                if (!directNavigation(step)) throw new IllegalStateException("Start the Odin helper to run this action");
             }
         }
         for (int i = 0; i < steps.length; i++) {

@@ -18,7 +18,10 @@ final class EdgeSwipe {
 
     static final String ACTIVATION_DISTANCE_KEY = "activation_distance";
     static final int ACTIVATION_DISTANCE = 24;
-    static final int MAX_DIRECTION_DEAD_ZONE = 18;
+    static final String DIRECTION_BUFFER_KEY = "direction_buffer";
+    static final int DIRECTION_BUFFER = 18;
+    static final int MIN_DIRECTION_BUFFER = 6;
+    static final int MAX_DIRECTION_BUFFER = 48;
 
     static int indicatorRotation(boolean left, int direction) {
         int tilt = direction == 1 ? -45 : direction == 2 ? 45 : 0;
@@ -28,22 +31,21 @@ final class EdgeSwipe {
     static final class Stroke {
         private final boolean left;
         private final float minimum;
-        private final float maxDeadZone;
+        private final float directionBuffer;
         private boolean feedbackSent;
 
-        Stroke(boolean left, float minimum, float maxDeadZone) {
+        Stroke(boolean left, float minimum, float directionBuffer) {
             this.left = left;
             this.minimum = minimum;
-            this.maxDeadZone = maxDeadZone;
+            this.directionBuffer = directionBuffer;
         }
 
         float inward(float dx) {
             return left ? dx : -dx;
         }
 
-        int direction(float dx, float dy) {
-            float deadZone = Math.min(maxDeadZone, .45f * Math.max(0, inward(dx)));
-            if (Math.abs(dy) <= deadZone) return 0;
+        int direction(float dy) {
+            if (Math.abs(dy) <= directionBuffer) return 0;
             return dy < 0 ? 1 : 2;
         }
 

@@ -210,7 +210,7 @@ final class WirelessController {
         RemoteInput input = new RemoteInput.Builder("code").setLabel("Six-digit pairing code").build();
         Notification.Action reply = new Notification.Action.Builder(null, "Enter pairing code", action).addRemoteInput(input).build();
         manager.notify(10, new Notification.Builder(context, CHANNEL).setSmallIcon(android.R.drawable.ic_lock_lock)
-            .setContentTitle("Pair Plus Key").setContentText("In Wireless debugging, open Pair device with pairing code. Enter code here.")
+            .setContentTitle("Pair Odin").setContentText("In Wireless debugging, open Pair device with pairing code. Enter code here.")
             .setStyle(new Notification.BigTextStyle().bigText("Keep Android’s pairing window open. Enter its six-digit code using this notification."))
             .addAction(reply).setAutoCancel(false).build());
     }
@@ -219,7 +219,7 @@ final class WirelessController {
         if ("Helper ready".equals(message)) { manager.cancel(10); return; }
         PendingIntent open = PendingIntent.getActivity(context, 2, new Intent(context, MainActivity.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         manager.notify(10, new Notification.Builder(context, CHANNEL).setSmallIcon(android.R.drawable.ic_lock_lock)
-            .setContentTitle("Plus Key setup needs attention").setContentText(message).setStyle(new Notification.BigTextStyle().bigText(message)).setContentIntent(open).setAutoCancel(true).build());
+            .setContentTitle("Odin setup needs attention").setContentText(message).setStyle(new Notification.BigTextStyle().bigText(message)).setContentIntent(open).setAutoCancel(true).build());
     }
     private interface Work { void run() throws Exception; }
 }

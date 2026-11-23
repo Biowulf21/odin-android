@@ -10,7 +10,7 @@ public final class PairingService extends Service {
         NotificationManager notifications = getSystemService(NotificationManager.class);
         notifications.createNotificationChannel(new NotificationChannel("wireless_setup", "Helper setup", NotificationManager.IMPORTANCE_HIGH));
         startForeground(11, new Notification.Builder(this,"wireless_setup").setSmallIcon(android.R.drawable.ic_lock_lock)
-            .setContentTitle("Pairing Plus Key").setContentText("Connecting to this phone. Keep Android pairing window open.").build());
+            .setContentTitle("Pairing Odin").setContentText("Connecting to this phone. Keep Android pairing window open.").build());
         String code=intent==null?null:intent.getStringExtra("code");
         int port=intent==null?0:intent.getIntExtra("port",0);
         WirelessController controller=WirelessController.get(this);

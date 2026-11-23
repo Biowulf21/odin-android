@@ -107,7 +107,7 @@ public final class EdgeService extends AccessibilityService {
             params.gravity = Gravity.TOP | (left ? Gravity.LEFT : Gravity.RIGHT);
             params.x = EdgeSettings.handleInset(this, metrics, insets, left, height);
             params.y = insets.top + Math.round((room - height) * position / 100f);
-            params.setTitle(left ? "PlusKey left handle" : "PlusKey right handle");
+            params.setTitle(left ? "Odin left handle" : "Odin right handle");
             View handle = handles[i];
             if (handle == null) {
                 handle = new View(this);
@@ -150,7 +150,7 @@ public final class EdgeService extends AccessibilityService {
         layout.setFitInsetsTypes(0);
         layout.x = x;
         layout.y = y;
-        layout.setTitle("PlusKey swipe arrow");
+        layout.setTitle("Odin swipe arrow");
         try {
             windows.addView(arrow, layout);
         } catch (WindowManager.BadTokenException unavailable) {
@@ -194,7 +194,7 @@ public final class EdgeService extends AccessibilityService {
                 case MotionEvent.ACTION_MOVE:
                     if (stroke != null) {
                         float dx = event.getX() - startX;
-                        int direction = stroke.direction(dx, event.getY() - startY);
+                        int direction = stroke.direction(event.getY() - startY);
                         boolean ready = stroke.canRelease(dx) && !target(direction).isEmpty();
                         if (stroke.feedback(ready)) EdgeSettings.releaseFeedback(view);
                         if (!arrowUnavailable && stroke.inward(dx) >= Ui.dp(EdgeService.this, 8)) {
@@ -214,7 +214,7 @@ public final class EdgeService extends AccessibilityService {
                     hideSwipeArrow();
                     if (stroke != null) {
                         float dx = event.getX() - startX;
-                        if (stroke.canRelease(dx)) trigger(target(stroke.direction(dx, event.getY() - startY)));
+                        if (stroke.canRelease(dx)) trigger(target(stroke.direction(event.getY() - startY)));
                     }
                     stroke = null;
                     break;
@@ -301,7 +301,7 @@ public final class EdgeService extends AccessibilityService {
             }
             Thread.sleep(100);
         } while (SystemClock.elapsedRealtime() < deadline);
-        throw new IllegalStateException("The Plus Key helper did not respond");
+        throw new IllegalStateException("The Odin helper did not respond");
     }
 
     private void message(String text) {

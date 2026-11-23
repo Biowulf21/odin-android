@@ -15,12 +15,12 @@ public final class ChainTest {
         for (boolean left : new boolean[]{true, false}) {
             float inward = left ? 48 : -48;
             EdgeSwipe.Stroke stroke = new EdgeSwipe.Stroke(left, 24, 18);
-            check(stroke.direction(inward, 0) == 0, "middle at initial height");
-            check(stroke.direction(inward, -40) == 1, "up relative to the starting point");
-            check(stroke.direction(inward, -12) == 0, "returns to middle");
-            check(stroke.direction(inward, 40) == 2, "down on other side of starting point");
-            check(stroke.direction(inward, 150) == 2, "steep diagonal after moving inward");
-            check(stroke.direction(inward * 4, -20) == 1, "long swipes can still turn up");
+            check(stroke.direction(0) == 0, "middle at initial height");
+            check(stroke.direction(-40) == 1, "up relative to the starting point");
+            check(stroke.direction(-12) == 0, "returns to middle");
+            check(stroke.direction(40) == 2, "down on other side of starting point");
+            check(stroke.direction(150) == 2, "steep diagonal after moving inward");
+            check(stroke.direction(-20) == 1, "diagonal starts outside the default buffer");
             check(!stroke.canRelease(0) && !stroke.canRelease(-inward), "vertical or outward swipes cannot run");
             check(!stroke.canRelease(inward / 4) && stroke.canRelease(inward / 2), "exact configured threshold");
             check(!stroke.feedback(false), "no tick below threshold or when unmapped");
@@ -28,6 +28,9 @@ public final class ChainTest {
             check(!stroke.feedback(true) && !stroke.feedback(false) && !stroke.feedback(true),
                 "no second tick when crossing a direction or distance again");
             check(!new EdgeSwipe.Stroke(left, 64, 18).canRelease(inward), "longer threshold takes effect");
+            EdgeSwipe.Stroke wide = new EdgeSwipe.Stroke(left, 24, 32);
+            check(wide.direction(-32) == 0 && wide.direction(-33) == 1 && wide.direction(33) == 2, "wide buffer");
+            check(new EdgeSwipe.Stroke(left, 24, 6).direction(7) == 2, "narrow buffer");
         }
         check(EdgeSwipe.indicatorRotation(true, 0) == 180 && EdgeSwipe.indicatorRotation(false, 0) == 0, "straight chevrons");
         check(EdgeSwipe.indicatorRotation(true, 1) == 135 && EdgeSwipe.indicatorRotation(false, 1) == 45, "up chevrons");

@@ -173,7 +173,7 @@ final class Mailbox {
         return request.exists() && request.delete();
     }
     void publish(String status, long now) throws IOException {
-        if (dir == null || !dir.isDirectory()) throw new IOException("Open Plus Lens app once before starting helper");
+        if (dir == null || !dir.isDirectory()) throw new IOException("Open Odin once before starting helper");
         File next = new File(dir, STATUS_FILE + ".next");
         try (FileOutputStream output = new FileOutputStream(next)) {
             output.write((now + "\n" + status + "\n").getBytes("UTF-8"));

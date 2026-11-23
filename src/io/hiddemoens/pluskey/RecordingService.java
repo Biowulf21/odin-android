@@ -54,7 +54,7 @@ public final class RecordingService extends Service {
         PendingIntent action = PendingIntent.getService(this, 0, stop, PendingIntent.FLAG_IMMUTABLE);
         Notification.Builder builder = new Notification.Builder(this, RecordingActivity.CHANNEL)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("Recording audio")
-            .setContentText("Saving to Music/Plus Key").setUsesChronometer(true).setOngoing(true)
+            .setContentText("Saving to Music/Odin").setUsesChronometer(true).setOngoing(true)
             .addAction(new Notification.Action.Builder(null, "Stop and save", action).build());
         if (Build.VERSION.SDK_INT >= 31) builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE);
         return builder.build();
@@ -63,9 +63,9 @@ public final class RecordingService extends Service {
     private void prepare(String token) throws IOException {
         String stamp = new SimpleDateFormat("yyyy-MM-dd HH-mm-ss-SSS", Locale.ROOT).format(new Date());
         ContentValues values = new ContentValues();
-        values.put(MediaStore.Audio.Media.DISPLAY_NAME, "Plus Key " + stamp + ".m4a");
+        values.put(MediaStore.Audio.Media.DISPLAY_NAME, "Odin " + stamp + ".m4a");
         values.put(MediaStore.Audio.Media.MIME_TYPE, "audio/mp4");
-        values.put(MediaStore.Audio.Media.RELATIVE_PATH, Environment.DIRECTORY_MUSIC + "/Plus Key/");
+        values.put(MediaStore.Audio.Media.RELATIVE_PATH, Environment.DIRECTORY_MUSIC + "/Odin/");
         values.put(MediaStore.Audio.Media.IS_PENDING, 1);
         output = getContentResolver().insert(MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), values);
         if (output == null) throw new IOException("Cannot create recording");

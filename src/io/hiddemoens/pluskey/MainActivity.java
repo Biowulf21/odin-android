@@ -27,7 +27,7 @@ public final class MainActivity extends AppCompatActivity {
     private static final long MIN_TICK_SPACING_MS = 55;
     private static final long STATUS_CHECK_MS = 2_000;
     private static final String LONG_PRESS_DEFAULT_SET = "long_press_default_set";
-    private static final String LONG_PRESS_SETUP_HINT = "Set the OnePlus action to Do nothing to let Plus Key handle long press and remove the ‘Press and hold…’ warning.";
+    private static final String LONG_PRESS_SETUP_HINT = "Set the OnePlus action to Do nothing to let Odin handle long press and remove the ‘Press and hold…’ warning.";
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private Mailbox mailbox;private WirelessController wireless;private SetupSheet setup;
@@ -118,7 +118,7 @@ public final class MainActivity extends AppCompatActivity {
         LinearLayout header = Ui.actions(this, window);
         header.setPadding(dp(20), dp(8), dp(12), dp(8));
         TextView title = new TextView(this);
-        title.setText("PlusKey");
+        title.setText(R.string.app_name);
         title.setTextSize(30);
         title.setTypeface(null, Typeface.BOLD);
         title.setTextColor(Ui.color(this, com.google.android.material.R.attr.colorOnSurface));
@@ -129,6 +129,7 @@ public final class MainActivity extends AppCompatActivity {
             if (settingsBack.isEnabled()) returnToMain();
             else showSettings();
         });
+        addGlobalStatus(window);
         destinations = new TabLayout(this);
         destinations.setTabMode(TabLayout.MODE_FIXED);
         destinations.setTabIndicatorFullWidth(false);
@@ -172,6 +173,25 @@ public final class MainActivity extends AppCompatActivity {
         showSelections();
     }
 
+    private void addGlobalStatus(LinearLayout window) {
+        LinearLayout strip = Ui.column(this);
+        strip.setPadding(dp(20), 0, dp(20), dp(6));
+        window.addView(strip, new LinearLayout.LayoutParams(-1, -2));
+        status = Ui.text(this, strip, "Button helper · Checking…", 14, false);
+        statusDot.setShape(GradientDrawable.OVAL);
+        statusDot.setSize(dp(8), dp(8));
+        statusDot.setColor(STATUS_AMBER);
+        status.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+        status.setCompoundDrawablePadding(dp(8));
+        status.setCompoundDrawablesRelativeWithIntrinsicBounds(statusDot, null, null, null);
+        detail = Ui.text(this, strip, "", 13, true);
+        progress = new LinearProgressIndicator(this);
+        progress.setIndeterminate(true);
+        progress.setVisibility(View.GONE);
+        strip.addView(progress, new LinearLayout.LayoutParams(-1, dp(4)));
+        status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+    }
+
     private LinearLayout buildButtonPage() {
         LinearLayout content = Ui.column(this);
         content.setPadding(dp(20), dp(20), dp(20), dp(24));
@@ -199,18 +219,7 @@ public final class MainActivity extends AppCompatActivity {
         Ui.button(this, longPressSetup, "Open OnePlus settings", false, v -> onePlusSettings());
 
         LinearLayout connection = Ui.card(this, content);
-        status = Ui.text(this, connection, "Checking button connection…", 16, false);
-        statusDot.setShape(GradientDrawable.OVAL);
-        statusDot.setSize(dp(8), dp(8));
-        statusDot.setColor(STATUS_AMBER);
-        status.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-        status.setCompoundDrawablePadding(dp(8));
-        status.setCompoundDrawablesRelativeWithIntrinsicBounds(statusDot, null, null, null);
-        detail = Ui.text(this, connection, "", 14, true);
-        progress = new LinearProgressIndicator(this);
-        progress.setIndeterminate(true);
-        progress.setVisibility(View.GONE);
-        connection.addView(progress, new LinearLayout.LayoutParams(-1, dp(4)));
+        Ui.text(this, connection, "Button connection", 16, false);
         LinearLayout controls = Ui.actions(this, connection);
         start = Ui.button(this, controls, "Start", true, v -> startHelper());
         stop = Ui.button(this, controls, "Stop", false, v -> {
@@ -240,7 +249,7 @@ public final class MainActivity extends AppCompatActivity {
             }
             prefs.edit().putBoolean(LONG_PRESS_DEFAULT_SET, true).apply();
         } catch (PackageManager.NameNotFoundException | IOException error) {
-            android.util.Log.w("PlusKey", "Could not initialize long press", error);
+            android.util.Log.w("Odin", "Could not initialize long press", error);
         }
     }
     private void showSettings() {
@@ -416,7 +425,7 @@ public final class MainActivity extends AppCompatActivity {
     }
 
     private void recordPattern() {
-        if (!helperReady) { toast("Start Plus Key before recording a pattern"); return; }
+        if (!helperReady) { toast("Start the button helper before recording a pattern"); return; }
         File dir = getExternalFilesDir(null);
         if (dir == null) { toast("Pattern storage unavailable"); return; }
         PatternCapture capture = new PatternCapture(dir);
@@ -598,7 +607,7 @@ public final class MainActivity extends AppCompatActivity {
         try {
             if (ShizukuConnection.authorized()) startHelper();
             else if (!ShizukuConnection.running()) toast("Start Shizuku first");
-            else if (Shizuku.shouldShowRequestPermissionRationale()) toast("Allow Plus Key in Shizuku’s authorized apps");
+            else if (Shizuku.shouldShowRequestPermissionRationale()) toast("Allow Odin in Shizuku’s authorized apps");
             else Shizuku.requestPermission(ShizukuConnection.PERMISSION_REQUEST);
         } catch (RuntimeException disconnected) {
             toast("Shizuku disconnected. Start it and try again.");
@@ -617,7 +626,7 @@ public final class MainActivity extends AppCompatActivity {
         try {
             statusObserver.startWatching();
         } catch (RuntimeException unavailable) {
-            android.util.Log.w("PlusKey", "Status callbacks unavailable", unavailable);
+            android.util.Log.w("Odin", "Status callbacks unavailable", unavailable);
         }
     }
     private void refresh(boolean checkLiveness) {
@@ -677,7 +686,7 @@ public final class MainActivity extends AppCompatActivity {
     }
     private void setStatus(String label, int color) {
         if (statusDot.getColor().getDefaultColor() != color) statusDot.setColor(color);
-        setTextIfChanged(status, label);
+        setTextIfChanged(status, "Button helper · " + label);
     }
 
     private static void setTextIfChanged(TextView view, String value) {

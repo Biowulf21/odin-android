@@ -32,7 +32,7 @@ final class SetupSheet {
         if(state.equals(previous))return;previous=state;body.removeAllViews();
         if (shizuku) {
             text("Shizuku",22,false);
-            text(authorized ? "Plus Key prefers Shizuku while it’s running." : "Allow Plus Key to start your button through Shizuku.",15,true);
+            text(authorized ? "Odin prefers Shizuku while it’s running." : "Allow Odin to start your button through Shizuku.",15,true);
             if (wireless.message.startsWith("Setup needed:")) text(wireless.message,14,true);
             if (!wireless.busy.get()) button(authorized ? "Start" : "Allow Shizuku",v->activity.authorizeShizuku());
             button("Wireless debugging setup",v->{wirelessOnly=true;refresh();});
@@ -51,7 +51,7 @@ final class SetupSheet {
         }
         if(!wireless.paired()){
             text("Pair with your phone",22,false);
-            text("This is a one-time connection. Android will show a six-digit code. Keep that window open and enter code in Plus Key notification.",15,true);
+            text("This is a one-time connection. Android will show a six-digit code. Keep that window open and enter code in the Odin notification.",15,true);
             if(!wifiDebugging())text("First enable Wireless debugging on the next screen. Android may ask you to approve your Wi-Fi network.",15,true);
             button("Pair with code",v->pairWithCode());return;
         }
@@ -77,7 +77,7 @@ final class SetupSheet {
     void automaticConsent(){
         if(wireless.busy.get()){Toast.makeText(activity,"Wait for current setup to finish",Toast.LENGTH_SHORT).show();return;}
         new MaterialAlertDialogBuilder(activity).setTitle("Allow automatic connection?")
-            .setMessage("One-time setup grants WRITE_SECURE_SETTINGS. Android allows this permission to change protected system settings; Plus Key uses it only to turn Wireless debugging on for startup and off afterward. Your Wi-Fi stays connected. Android may still ask you to approve a new Wi-Fi network.")
+            .setMessage("One-time setup grants WRITE_SECURE_SETTINGS. Android allows this permission to change protected system settings; Odin uses it only to turn Wireless debugging on for startup and off afterward. Your Wi-Fi stays connected. Android may still ask you to approve a new Wi-Fi network.")
             .setNegativeButton("Not now",null).setPositiveButton("Allow",(d,w)->{
                 wireless.prefs().edit().putInt("automatic_consent_revision",2).putBoolean("automatic_requested",true).putBoolean("user_stopped",false).apply();
                 if(wireless.canControlDebugging()){wireless.prefs().edit().putBoolean("automatic_debugging",true).putBoolean("automatic_requested",false).apply();wireless.start();}

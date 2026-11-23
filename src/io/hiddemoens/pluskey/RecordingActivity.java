@@ -22,7 +22,7 @@ public final class RecordingActivity extends Activity {
     static void checkReady(Context context) {
         for (String permission : requiredPermissions()) {
             if (context.checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED)
-                throw new IllegalStateException("Allow microphone and notifications in Plus Key first");
+                throw new IllegalStateException("Allow microphone and notifications in Odin first");
         }
         if (!context.getSystemService(PowerManager.class).isInteractive() || context.getSystemService(KeyguardManager.class).isKeyguardLocked())
             throw new IllegalStateException("Unlock phone to record");
@@ -36,7 +36,7 @@ public final class RecordingActivity extends Activity {
         super.onCreate(state);
         token = getIntent().getStringExtra("session");
         if (!RecordingProvider.lease.pending(token)) { finish(); return; }
-        setTitle("Plus Key");
+        setTitle(R.string.app_name);
         TextView text = new TextView(this);
         text.setText("Starting audio recording…");
         text.setPadding(32, 24, 32, 24);
