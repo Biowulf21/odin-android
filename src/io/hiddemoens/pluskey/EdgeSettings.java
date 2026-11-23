@@ -10,8 +10,10 @@ import android.graphics.Color;
 import android.graphics.Insets;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.os.Build;
 import android.provider.Settings;
 import android.text.TextUtils;
+import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowInsets;
@@ -63,9 +65,25 @@ final class EdgeSettings {
 
     static void styleIndicator(ImageView view, boolean left, int color) {
         view.setImageResource(R.drawable.ic_swipe_chevron);
-        view.setScaleX(left ? -1f : 1f);
+        updateIndicator(view, left, 0, true);
         view.setColorFilter(color);
         view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+    }
+
+    static EdgeSwipe.Stroke newStroke(Context context, SharedPreferences prefs, boolean left) {
+        return new EdgeSwipe.Stroke(left, Ui.dp(context,
+            prefs.getInt(EdgeSwipe.ACTIVATION_DISTANCE_KEY, EdgeSwipe.ACTIVATION_DISTANCE)),
+            Ui.dp(context, EdgeSwipe.MAX_DIRECTION_DEAD_ZONE));
+    }
+
+    static void updateIndicator(ImageView view, boolean left, int direction, boolean ready) {
+        view.setRotation(EdgeSwipe.indicatorRotation(left, direction));
+        view.setAlpha(ready ? 1f : .55f);
+    }
+
+    static void releaseFeedback(View view) {
+        view.performHapticFeedback(Build.VERSION.SDK_INT >= 34
+            ? HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE : HapticFeedbackConstants.CLOCK_TICK);
     }
 
     final LinearLayout page;
@@ -232,7 +250,7 @@ final class EdgeSettings {
         LinearLayout body = Ui.column(activity);
         int padding = Ui.dp(activity, 24);
         body.setPadding(padding, Ui.dp(activity, 4), padding, padding);
-        Ui.text(activity, body, "Drag across the preview to try the chevron.", 14, true);
+        Ui.text(activity, body, "Drag inward. The vibration tells you when to release.", 14, true);
         FrameLayout stage = new FrameLayout(activity);
         android.graphics.drawable.GradientDrawable surface = new android.graphics.drawable.GradientDrawable();
         surface.setCornerRadius(Ui.dp(activity, 14));
@@ -251,24 +269,43 @@ final class EdgeSettings {
             chevron.setY(Math.max(0, (stage.getHeight() - size) / 2f));
         };
         stage.addOnLayoutChangeListener((v, l, t, r, b, oldL, oldT, oldR, oldB) -> preview.run());
-        stage.setOnTouchListener((view, event) -> {
-            switch (event.getActionMasked()) {
-                case MotionEvent.ACTION_DOWN:
-                    stage.getParent().requestDisallowInterceptTouchEvent(true);
-                    // The preview uses the same bounds as the live indicator.
-                case MotionEvent.ACTION_MOVE:
-                case MotionEvent.ACTION_UP:
-                    int size = chevron.getLayoutParams().width;
-                    chevron.setX(EdgeSwipe.indicatorX(left, Math.round(event.getX()), stage.getWidth(), size,
-                        Ui.dp(activity, 10), Ui.dp(activity, 72)));
-                    chevron.setY(Math.max(0, Math.min(stage.getHeight() - size, event.getY() - size / 2f)));
-                    return true;
-                case MotionEvent.ACTION_CANCEL:
-                    return true;
-                default:
-                    return false;
+        stage.setOnTouchListener(new View.OnTouchListener() {
+            private EdgeSwipe.Stroke stroke;
+            private float startX, startY;
+
+            @Override public boolean onTouch(View view, MotionEvent event) {
+                switch (event.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN:
+                        stage.getParent().requestDisallowInterceptTouchEvent(true);
+                        stroke = newStroke(activity, prefs, left);
+                        startX = event.getX();
+                        startY = event.getY();
+                        updateIndicator(chevron, left, 0, false);
+                        return true;
+                    case MotionEvent.ACTION_MOVE:
+                        if (stroke == null) return true;
+                        int size = chevron.getLayoutParams().width;
+                        float dx = event.getX() - startX;
+                        boolean ready = stroke.canRelease(dx);
+                        updateIndicator(chevron, left, stroke.direction(dx, event.getY() - startY), ready);
+                        if (stroke.feedback(ready)) releaseFeedback(stage);
+                        chevron.setX(EdgeSwipe.indicatorX(left, Math.round(event.getX()), stage.getWidth(), size,
+                            Ui.dp(activity, 10), Ui.dp(activity, 72)));
+                        chevron.setY(Math.max(0, Math.min(stage.getHeight() - size, event.getY() - size / 2f)));
+                        return true;
+                    case MotionEvent.ACTION_POINTER_DOWN:
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        stroke = null;
+                        preview.run();
+                        return true;
+                    default:
+                        return true;
+                }
             }
         });
+        slider(body, EdgeSwipe.ACTIVATION_DISTANCE_KEY, "Release distance", " dp", 16, 72,
+            EdgeSwipe.ACTIVATION_DISTANCE, preview);
         slider(body, EdgeSwipe.INDICATOR_SIZE_KEY, "Size", " dp", 16, 52, EdgeSwipe.INDICATOR_SIZE, preview);
         MaterialButton color = Ui.button(activity, body, "Color", false, view ->
             showIndicatorColor(preview, (MaterialButton) view));

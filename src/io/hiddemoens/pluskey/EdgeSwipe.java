@@ -16,54 +16,45 @@ final class EdgeSwipe {
         return left ? offset : Math.max(0, screenWidth - size - offset);
     }
 
-    // Use signed inward distance so the same angles apply to either edge.
-    static int direction(boolean left, float dx, float dy, float minimum) {
-        float inward = left ? dx : -dx;
-        if (inward < minimum || Math.abs(dy) > 2.75 * inward) return -1;
-        if (Math.abs(dy) < .45 * inward) return 0;
-        return dy < 0 ? 1 : 2;
+    static final String ACTIVATION_DISTANCE_KEY = "activation_distance";
+    static final int ACTIVATION_DISTANCE = 24;
+    static final int MAX_DIRECTION_DEAD_ZONE = 18;
+
+    static int indicatorRotation(boolean left, int direction) {
+        int tilt = direction == 1 ? -45 : direction == 2 ? 45 : 0;
+        return left ? 180 + tilt : -tilt;
     }
+
     static final class Stroke {
         private final boolean left;
         private final float minimum;
-        private float anchorInward, anchorY;
-        private boolean committed;
-        private int turn = -1;
+        private final float maxDeadZone;
+        private boolean feedbackSent;
 
-        Stroke(boolean left, float minimum) {
+        Stroke(boolean left, float minimum, float maxDeadZone) {
             this.left = left;
             this.minimum = minimum;
+            this.maxDeadZone = maxDeadZone;
         }
 
-        void move(float dx, float dy) {
-            float inward = left ? dx : -dx;
-            if (!committed) {
-                if (direction(left, dx, dy, minimum) >= 0) {
-                    committed = true;
-                    anchorInward = inward;
-                    anchorY = dy;
-                }
-                return;
-            }
-
-            // Once the swipe has moved inward, recognize a turn from a recent point on its path.
-            float horizontal = Math.abs(inward - anchorInward);
-            float vertical = dy - anchorY;
-            if (Math.abs(vertical) >= minimum * .75f && Math.abs(vertical) > horizontal) {
-                turn = vertical < 0 ? 1 : 2;
-            } else if (inward - anchorInward >= minimum && Math.abs(vertical) < .45f * horizontal) {
-                turn = -1;
-            } else {
-                return;
-            }
-            anchorInward = inward;
-            anchorY = dy;
+        float inward(float dx) {
+            return left ? dx : -dx;
         }
 
-        int finish(float dx, float dy) {
-            move(dx, dy);
-            if ((left ? dx : -dx) < minimum) return -1;
-            return turn >= 0 ? turn : direction(left, dx, dy, minimum);
+        int direction(float dx, float dy) {
+            float deadZone = Math.min(maxDeadZone, .45f * Math.max(0, inward(dx)));
+            if (Math.abs(dy) <= deadZone) return 0;
+            return dy < 0 ? 1 : 2;
+        }
+
+        boolean canRelease(float dx) {
+            return inward(dx) >= minimum;
+        }
+
+        boolean feedback(boolean ready) {
+            if (!ready || feedbackSent) return false;
+            feedbackSent = true;
+            return true;
         }
     }
 }

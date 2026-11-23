@@ -14,29 +14,24 @@ public final class ChainTest {
     public static void main(String[] args) throws Exception {
         for (boolean left : new boolean[]{true, false}) {
             float inward = left ? 48 : -48;
-            check(EdgeSwipe.direction(left, inward, 0, 24) == 0, "straight");
-            check(EdgeSwipe.direction(left, inward, -40, 24) == 1, "up");
-            check(EdgeSwipe.direction(left, inward, 40, 24) == 2, "down");
-            check(EdgeSwipe.direction(left, inward, 150, 24) == -1, "vertical");
-            check(EdgeSwipe.direction(left, -inward, 0, 24) == -1, "outward");
-            check(EdgeSwipe.direction(left, inward / 4, 0, 24) == -1, "too short");
-            check(EdgeSwipe.direction(left, inward, -24, 24) == 1, "shallow up");
-            check(EdgeSwipe.direction(left, inward, 12, 24) == 0, "straight with a small drift");
-            EdgeSwipe.Stroke up = new EdgeSwipe.Stroke(left, 24);
-            up.move(inward, 0);
-            up.move(inward * 2, 0);
-            check(up.finish(inward * 2, -28) == 1, "late upward turn");
-            EdgeSwipe.Stroke down = new EdgeSwipe.Stroke(left, 24);
-            down.move(inward / 2, 0);
-            check(down.finish(inward / 2, 150) == 2, "steep downward turn after an inward swipe");
-            EdgeSwipe.Stroke vertical = new EdgeSwipe.Stroke(left, 24);
-            vertical.move(0, 60);
-            check(vertical.finish(inward / 2, 150) == -1, "vertical scroll never committed inward");
-            EdgeSwipe.Stroke resumed = new EdgeSwipe.Stroke(left, 24);
-            resumed.move(inward, 0);
-            resumed.move(inward, -20);
-            check(resumed.finish(inward * 2, -20) == 0, "horizontal ending clears an earlier turn");
+            EdgeSwipe.Stroke stroke = new EdgeSwipe.Stroke(left, 24, 18);
+            check(stroke.direction(inward, 0) == 0, "middle at initial height");
+            check(stroke.direction(inward, -40) == 1, "up relative to the starting point");
+            check(stroke.direction(inward, -12) == 0, "returns to middle");
+            check(stroke.direction(inward, 40) == 2, "down on other side of starting point");
+            check(stroke.direction(inward, 150) == 2, "steep diagonal after moving inward");
+            check(stroke.direction(inward * 4, -20) == 1, "long swipes can still turn up");
+            check(!stroke.canRelease(0) && !stroke.canRelease(-inward), "vertical or outward swipes cannot run");
+            check(!stroke.canRelease(inward / 4) && stroke.canRelease(inward / 2), "exact configured threshold");
+            check(!stroke.feedback(false), "no tick below threshold or when unmapped");
+            check(stroke.feedback(stroke.canRelease(inward)), "tick once when a mapped action can run");
+            check(!stroke.feedback(true) && !stroke.feedback(false) && !stroke.feedback(true),
+                "no second tick when crossing a direction or distance again");
+            check(!new EdgeSwipe.Stroke(left, 64, 18).canRelease(inward), "longer threshold takes effect");
         }
+        check(EdgeSwipe.indicatorRotation(true, 0) == 180 && EdgeSwipe.indicatorRotation(false, 0) == 0, "straight chevrons");
+        check(EdgeSwipe.indicatorRotation(true, 1) == 135 && EdgeSwipe.indicatorRotation(false, 1) == 45, "up chevrons");
+        check(EdgeSwipe.indicatorRotation(true, 2) == 225 && EdgeSwipe.indicatorRotation(false, 2) == -45, "down chevrons");
         check(EdgeSwipe.indicatorX(true, 0, 400, 24, 8, 72) == 0, "left indicator starts at edge");
         check(EdgeSwipe.indicatorX(true, 60, 400, 24, 8, 72) == 28, "indicator follows nearby movement");
         check(EdgeSwipe.indicatorX(true, 380, 400, 24, 8, 72) == 48, "left indicator stays in outer band");

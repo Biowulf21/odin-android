@@ -17,7 +17,7 @@ Optional **Automatic startup** uses a protected-settings permission to turn on W
 
 Open any press or swipe mapping and choose **Add action**. Add one action or keep adding steps. Use a step’s menu to reorder or remove it. A chain stops at the first failed step. For example, choose **Wi-Fi off → Mobile data on → Hotspot on** for one gesture, and **Hotspot off → Wi-Fi on → Mobile data off** for another.
 
-Open the **Edge swipes** tab to enable the PlusKey edge service and turn on either handle. Each handle has separate straight-inward, diagonal-up, and diagonal-down assignments. Handles stay invisible between gestures. A chevron follows your swipe near the edge. Use **Swipe indicator** to adjust its size and color. Open **Handle size & position** to see and drag the preview. Tall handles sit just inside the system Back area when gesture navigation is active. Back, Home, and Recent apps work without the button helper. Chains that use privileged actions require the helper.
+Open the **Edge swipes** tab to enable the PlusKey edge service and turn on either handle. Each handle has separate straight-inward, diagonal-up, and diagonal-down assignments. Handles stay invisible between gestures. A chevron follows your swipe near the edge. The chevron points in the direction of your swipe from its starting point. Use **Swipe indicator** to adjust its size and color or set the **Release distance**. The phone vibrates once when the swipe is ready to release. Open **Handle size & position** to see and drag the preview. Tall handles sit just inside the system Back area when gesture navigation is active. Back, Home, and Recent apps work without the button helper. Chains that use privileged actions require the helper.
 
 ## Button behavior
 

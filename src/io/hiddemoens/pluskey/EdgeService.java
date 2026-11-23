@@ -122,13 +122,15 @@ public final class EdgeService extends AccessibilityService {
         }
     }
 
-    private boolean showSwipeArrow(boolean left, float fingerX, float fingerY, Rect display) {
+    private boolean showSwipeArrow(boolean left, float fingerX, float fingerY, Rect display,
+            int direction, boolean ready) {
         int size = Ui.dp(this, prefs.getInt(EdgeSwipe.INDICATOR_SIZE_KEY, EdgeSwipe.INDICATOR_SIZE));
         int x = EdgeSwipe.indicatorX(left, Math.round(fingerX) - display.left, display.width(), size,
             Ui.dp(this, 10), Ui.dp(this, 72));
         int y = Math.round(fingerY) - size / 2 - display.top;
         y = Math.max(0, Math.min(display.height() - size, y));
         if (swipeArrow != null) {
+            EdgeSettings.updateIndicator(swipeArrow, left, direction, ready);
             if (arrowLayout.x != x || arrowLayout.y != y) {
                 arrowLayout.x = x;
                 arrowLayout.y = y;
@@ -139,6 +141,7 @@ public final class EdgeService extends AccessibilityService {
 
         ImageView arrow = new ImageView(this);
         EdgeSettings.styleIndicator(arrow, left, prefs.getInt(EdgeSwipe.INDICATOR_COLOR_KEY, EdgeSwipe.INDICATOR_COLOR));
+        EdgeSettings.updateIndicator(arrow, left, direction, ready);
         WindowManager.LayoutParams layout = new WindowManager.LayoutParams(size, size,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
@@ -182,7 +185,7 @@ public final class EdgeService extends AccessibilityService {
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     if (!unlocked()) return false;
-                    stroke = new EdgeSwipe.Stroke(left, Ui.dp(EdgeService.this, 24));
+                    stroke = EdgeSettings.newStroke(EdgeService.this, prefs, left);
                     display = windows.getCurrentWindowMetrics().getBounds();
                     arrowUnavailable = false;
                     startX = event.getX();
@@ -190,13 +193,15 @@ public final class EdgeService extends AccessibilityService {
                     return true;
                 case MotionEvent.ACTION_MOVE:
                     if (stroke != null) {
-                        for (int i = 0; i < event.getHistorySize(); i++) {
-                            stroke.move(event.getHistoricalX(i) - startX, event.getHistoricalY(i) - startY);
-                        }
                         float dx = event.getX() - startX;
-                        stroke.move(dx, event.getY() - startY);
-                        if (!arrowUnavailable && (swipeArrow != null || (left ? dx : -dx) >= Ui.dp(EdgeService.this, 8))) {
-                            arrowUnavailable = !showSwipeArrow(left, event.getRawX(), event.getRawY(), display);
+                        int direction = stroke.direction(dx, event.getY() - startY);
+                        boolean ready = stroke.canRelease(dx) && !target(direction).isEmpty();
+                        if (stroke.feedback(ready)) EdgeSettings.releaseFeedback(view);
+                        if (!arrowUnavailable && stroke.inward(dx) >= Ui.dp(EdgeService.this, 8)) {
+                            arrowUnavailable = !showSwipeArrow(left, event.getRawX(), event.getRawY(), display,
+                                direction, ready);
+                        } else if (stroke.inward(dx) < Ui.dp(EdgeService.this, 8)) {
+                            hideSwipeArrow();
                         }
                     }
                     break;
@@ -208,14 +213,16 @@ public final class EdgeService extends AccessibilityService {
                 case MotionEvent.ACTION_UP:
                     hideSwipeArrow();
                     if (stroke != null) {
-                        int direction = stroke.finish(event.getX() - startX, event.getY() - startY);
-                        if (direction >= 0) trigger(prefs.getString(side + "." + EdgeSwipe.KEYS[direction],
-                            direction == 0 ? "action:back" : ""));
+                        float dx = event.getX() - startX;
+                        if (stroke.canRelease(dx)) trigger(target(stroke.direction(dx, event.getY() - startY)));
                     }
                     stroke = null;
                     break;
             }
             return true;
+        }
+        private String target(int direction) {
+            return prefs.getString(side + "." + EdgeSwipe.KEYS[direction], direction == 0 ? "action:back" : "");
         }
     }
 

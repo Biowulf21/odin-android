@@ -175,7 +175,7 @@ public final class Helper {
         String error = "";
         try {
             if (!isAwakeAndUnlocked()) throw new IllegalStateException("Unlock your phone first");
-            runTarget(request[2]);
+            runTarget(request[2], false);
         } catch (Exception failure) {
             error = failure.getMessage() != null ? failure.getMessage() : failure.getClass().getSimpleName();
         }
@@ -408,6 +408,10 @@ public final class Helper {
     }
 
     private void runTarget(String target) throws Exception {
+        runTarget(target, true);
+    }
+
+    private void runTarget(String target, boolean feedback) throws Exception {
         if (!running) return;
         String[] steps = ActionChain.parse(target);
         if (steps != null) {
@@ -425,8 +429,10 @@ public final class Helper {
                 intent.toUri(android.content.Intent.URI_INTENT_SCHEME));
             if (result.contains("Error") || result.contains("Exception")) throw new IOException(result);
         }
-        try { DeviceActions.feedback(); }
-        catch (Exception e) { System.err.println("Feedback unavailable: " + e.getClass().getSimpleName()); }
+        if (feedback) {
+            try { DeviceActions.feedback(); }
+            catch (Exception e) { System.err.println("Feedback unavailable: " + e.getClass().getSimpleName()); }
+        }
         launches++;
         last = "Action completed";
         System.out.println(last + " (" + launches + ")");
