@@ -32,7 +32,7 @@ final class Updates {
   if(manual)toast("Checking for updates…");
   worker.execute(()->{
    try{
-    HttpURLConnection connection=connect("https://api.github.com/repos/hiddemoens/PlusKey/releases/latest");
+    HttpURLConnection connection=connect("https://api.github.com/repos/James-Slot-app/PlusKey/releases/latest");
     String json;
     try{int status=connection.getResponseCode();if(status==404){prefs().edit().putLong("checked",System.currentTimeMillis()).apply();if(manual)toast("No published release yet");return;}if(status!=200)throw new IOException("Release check unavailable");json=read(connection,1048576);}finally{connection.disconnect();}
     JSONObject release=new JSONObject(json);prefs().edit().putLong("checked",System.currentTimeMillis()).apply();

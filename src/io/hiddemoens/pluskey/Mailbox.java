@@ -4,6 +4,9 @@ import java.util.*;
 final class Mailbox {
     static final String STOP_REQUEST = "helper-stop";
     static final String PREVIEW_REQUEST = "preview-request";
+    static final String ACTION_REQUEST = "edge-action-request";
+    private static final String ACTION_REPLY = "edge-action-reply";
+    static final long ACTION_TIMEOUT_MS = 35_000;
     static final String STATUS_REQUEST = "status-request";
     static final String STATUS_FILE = "helper-status";
     static final int MIN_CLICK_INTERVAL_MS = 100;
@@ -137,20 +140,24 @@ final class Mailbox {
     void publishVersion(String version)throws IOException {try(FileOutputStream output=new FileOutputStream(new File(dir,"helper-version"))){output.write(version.getBytes("UTF-8"));}}
     String runningVersion()throws IOException {try(BufferedReader input=new BufferedReader(new FileReader(new File(dir,"helper-version")))){return input.readLine();}catch(FileNotFoundException e){return "";}}
     String readStatus(long now) throws IOException {
-        return readStatus(now, false);
+        return readStatus(now, false, Long.MIN_VALUE);
     }
     String refreshStatus(long now) throws IOException {
-        return readStatus(now, true);
+        return readStatus(now, true, Long.MIN_VALUE);
     }
-    private String readStatus(long now, boolean refresh) throws IOException {
+    String readStatusAfter(long earliest) throws IOException {
+        return readStatus(System.currentTimeMillis(), false, earliest);
+    }
+    private String readStatus(long now, boolean refresh, long earliest) throws IOException {
         if (dir == null) return null;
         long age = Long.MAX_VALUE;
         String status = null;
         try (BufferedReader reader = new BufferedReader(new FileReader(new File(dir, STATUS_FILE)))) {
             String first = reader.readLine();
             if (first != null) {
-                age = now - Long.parseLong(first);
-                if (age >= 0 && age <= STATUS_MAX_AGE_MS) status = reader.readLine();
+                long published = Long.parseLong(first);
+                age = now - published;
+                if (published >= earliest && age >= 0 && age <= STATUS_MAX_AGE_MS) status = reader.readLine();
             }
         } catch (FileNotFoundException | NumberFormatException ignored) { }
         if (refresh && (status == null || age >= STATUS_REFRESH_AGE_MS)) requestStatus();
@@ -207,5 +214,52 @@ final class Mailbox {
             claimed.delete();
         }
     }
+    void requestAction(String token, long deadline, String action) throws IOException {
+        if (!Options.builtIn(action)) throw new IllegalArgumentException("Unknown built-in action");
+        writeActionMessage(ACTION_REQUEST, token + "\n" + deadline + "\n" + action);
+    }
+
+    String[] consumeAction() throws IOException {
+        File request = new File(dir, ACTION_REQUEST);
+        File claimed = new File(dir, ACTION_REQUEST + ".claimed");
+        if (!request.renameTo(claimed)) return null;
+        try {
+            if (claimed.length() > 128) return null;
+            try (BufferedReader input = new BufferedReader(new FileReader(claimed))) {
+                String token = input.readLine();
+                String deadline = input.readLine();
+                String action = input.readLine();
+                if (token == null || !token.matches("[a-f0-9-]{36}")
+                        || deadline == null || !deadline.matches("[0-9]{1,16}")
+                        || !Options.builtIn(action)) return null;
+                return new String[]{token, deadline, action};
+            }
+        } finally {
+            claimed.delete();
+        }
+    }
+
+    void replyAction(String token, String error) throws IOException {
+        writeActionMessage(ACTION_REPLY, token + "\n" + error.replace('\n', ' ').replace('\r', ' ') + "\n");
+    }
+
+    String readActionReply(String token) throws IOException {
+        File reply = new File(dir, ACTION_REPLY);
+        try (BufferedReader input = new BufferedReader(new FileReader(reply))) {
+            return token.equals(input.readLine()) ? input.readLine() : null;
+        } catch (FileNotFoundException missing) {
+            if (!reply.exists()) return null;
+            throw missing;
+        }
+    }
+
+    private void writeActionMessage(String name, String value) throws IOException {
+        File next = new File(dir, name + ".next");
+        try (FileOutputStream out = new FileOutputStream(next)) {
+            out.write(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
+        if (!next.renameTo(new File(dir, name))) throw new IOException("Could not publish action message");
+    }
+
     void clearStop() { if (dir != null) new File(dir, STOP_REQUEST).delete(); }
 }

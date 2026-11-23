@@ -118,7 +118,7 @@ public final class Helper {
             FileObserver.CREATE | FileObserver.MOVED_TO | FileObserver.CLOSE_WRITE) {
             @Override public void onEvent(int event, String path) {
                 if (("tile-query".equals(path) && event == FileObserver.CLOSE_WRITE) || Mailbox.STOP_REQUEST.equals(path) || Mailbox.PREVIEW_REQUEST.equals(path)
-                    || Mailbox.STATUS_REQUEST.equals(path)) {
+                    || Mailbox.STATUS_REQUEST.equals(path) || Mailbox.ACTION_REQUEST.equals(path)) {
                     mailboxChanged.offer(true);
                 }
             }
@@ -144,6 +144,8 @@ public final class Helper {
                         }
                     } catch (Exception unavailable) { System.err.println("Quick Settings list unavailable"); }
                 }
+                String[] edge = mailbox.consumeAction();
+                if (edge != null && running) actions.execute(() -> runEdgeAction(edge));
                 int preview = mailbox.consumePreview();
                 if (preview != 0) enqueue(preview, true);
                 String status = statusLine();
@@ -160,6 +162,25 @@ public final class Helper {
             try { stop(); } catch (IOException ignored) { }
         } finally {
             observer.stopWatching();
+        }
+    }
+
+    private void runEdgeAction(String[] request) {
+        String token = request[0];
+        long now = SystemClock.elapsedRealtime();
+        long deadline = Long.parseLong(request[1]);
+        if (!running || deadline <= now || deadline - now > Mailbox.ACTION_TIMEOUT_MS) return;
+        String error = "";
+        try {
+            if (!isAwakeAndUnlocked()) throw new IllegalStateException("Unlock your phone first");
+            runTarget(request[2]);
+        } catch (Exception failure) {
+            error = failure.getMessage() != null ? failure.getMessage() : failure.getClass().getSimpleName();
+        }
+        try {
+            mailbox.replyAction(token, error);
+        } catch (IOException failure) {
+            System.err.println("Could not report edge action result: " + failure);
         }
     }
 
@@ -386,7 +407,15 @@ public final class Helper {
 
     private void runTarget(String target) throws Exception {
         if (!running) return;
-        if (target.startsWith("tile:")) QuickTile.click(target);
+        String[] steps = ActionChain.parse(target);
+        if (steps != null) {
+            ActionChain.run(steps, true, step -> {
+                if (!Policy.mayRunWhileLocked(step) && !isAwakeAndUnlocked()) {
+                    throw new IllegalStateException("Unlock your phone first");
+                }
+                DeviceActions.run(step);
+            });
+        } else if (target.startsWith("tile:")) QuickTile.click(target);
         else if (target.startsWith("action:")) DeviceActions.run(target);
         else for (android.content.Intent intent : Targets.intents(target)) {
             if (target.startsWith("voice:")) intent.putExtra(android.speech.RecognizerIntent.EXTRA_SECURE, !isAwakeAndUnlocked());

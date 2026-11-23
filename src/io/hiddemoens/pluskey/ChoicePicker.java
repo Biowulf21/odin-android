@@ -70,6 +70,8 @@ final class ChoicePicker {
 
     private final Context context;
     private final Selected selected;
+    enum Mode { BUTTON, STEP, EDGE }
+    private final Mode mode;
     private final List<Entry> visible = new ArrayList<>();
     private final List<Entry> actions = new ArrayList<>();
     private final LruCache<String, Drawable> icons = new LruCache<>(32);
@@ -94,8 +96,13 @@ final class ChoicePicker {
     private final Rows rows = new Rows();
 
     ChoicePicker(Context context, Selected selected) {
+        this(context, selected, Mode.BUTTON);
+    }
+
+    ChoicePicker(Context context, Selected selected, Mode mode) {
         this.context = context;
         this.selected = selected;
+        this.mode = mode;
     }
 
     void show(String title, String unsetLabel, String current, Runnable timing, Runnable remove) {
@@ -107,8 +114,13 @@ final class ChoicePicker {
             if (Targets.ACTIONS[i].equals("action:torch") && !context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH)) continue;
             actions.add(new Entry(new Targets.Choice(Targets.LABELS[i], Targets.ACTIONS[i]), null));
         }
-        actions.add(new Entry(new Targets.Choice("If media is playing…", "media:"), null));
-        actions.add(new Entry(new Targets.Choice("App fan", "fan:"), null));
+        if (mode != Mode.STEP) {
+            actions.add(new Entry(new Targets.Choice("Action chain", "chain:"), null));
+        }
+        if (mode == Mode.BUTTON) {
+            actions.add(new Entry(new Targets.Choice("If media is playing…", "media:"), null));
+            actions.add(new Entry(new Targets.Choice("App fan", "fan:"), null));
+        }
         sheet = new BottomSheetDialog(context);
         sheet.setDismissWithAnimation(true);
         LinearLayout body = Ui.column(context);
@@ -156,6 +168,7 @@ final class ChoicePicker {
         segment.topMargin = dp(6);
         segment.bottomMargin = dp(12);
         body.addView(tabs, segment);
+        if (mode == Mode.STEP) tabs.setVisibility(View.GONE);
         legend = Ui.text(context, body, "Offers an action you can use while locked", 14, false);
         Drawable lock = context.getDrawable(R.drawable.ic_locked_action).mutate();
         lock.setTint(accent);
@@ -283,8 +296,8 @@ final class ChoicePicker {
 
     private void refresh() {
         search.setVisibility((browsingApps || choosingFan) && openedApp == null ? View.VISIBLE : View.GONE);
-        legend.setVisibility(browsingApps && (openedApp != null ? openedApp.hasLocked : apps != null && apps.stream().anyMatch(group -> group.hasLocked)) ? View.VISIBLE : View.GONE);
-        tileNote.setVisibility(openedApp != null && openedApp.hasTiles ? View.VISIBLE : View.GONE);
+        legend.setVisibility(mode == Mode.BUTTON && browsingApps && (openedApp != null ? openedApp.hasLocked : apps != null && apps.stream().anyMatch(group -> group.hasLocked)) ? View.VISIBLE : View.GONE);
+        tileNote.setVisibility(mode == Mode.BUTTON && openedApp != null && openedApp.hasTiles ? View.VISIBLE : View.GONE);
         visible.clear();
         saveFan.setVisibility(choosingFan ? View.VISIBLE : View.GONE);
         if (choosingFan) {
@@ -307,6 +320,7 @@ final class ChoicePicker {
             for (String section : new String[]{"Launch", "Lock screen", "Shortcuts", "Quick Settings"}) {
                 boolean first = true;
                 for (Entry entry : openedApp.children) {
+                    if (mode == Mode.EDGE && !Options.validComponent(entry.choice.target)) continue;
                     if (!section.equals(appCategory(entry.choice.target))) continue;
                     if (first) visible.add(new Heading(section));
                     first = false;
@@ -316,7 +330,10 @@ final class ChoicePicker {
         }
         else if (apps != null) {
             String query = search.getText().toString().trim().toLowerCase(Locale.ROOT);
-            for (AppGroup group : apps) if (group.matches(query)) visible.add(group);
+            for (AppGroup group : apps) {
+                if (mode == Mode.EDGE && group.children.stream().noneMatch(entry -> Options.validComponent(entry.choice.target))) continue;
+                if (group.matches(query)) visible.add(group);
+            }
         }
         empty.setText(loading ? "Loading apps…" : "No matching apps");
         empty.setVisibility(visible.isEmpty() ? View.VISIBLE : View.GONE);
@@ -354,7 +371,9 @@ final class ChoicePicker {
             case "action:sound_cycle": case "action:vibrate_toggle": case "action:silent_toggle": case "action:silent":
             case "action:vibrate": case "action:ring": case "action:volume_up": case "action:volume_down": case "action:dnd_hour": return "Sound";
             case "action:media_toggle": case "action:media_pause": case "action:media_next": case "action:media_previous": case "media:": return "Media";
-            case "action:wifi_toggle": case "action:data_toggle": case "action:data_sim": case "action:data_slot1": case "action:data_slot2": case "action:hotspot": return "Connectivity";
+            case "action:wifi_toggle": case "action:data_toggle": case "action:data_sim": case "action:data_slot1": case "action:data_slot2": case "action:hotspot":
+            case "action:wifi_on": case "action:wifi_off": case "action:data_on": case "action:data_off":
+            case "action:hotspot_on": case "action:hotspot_off": return "Connectivity";
             default: return "Device";
         }
     }
@@ -482,19 +501,28 @@ final class ChoicePicker {
         if (target.startsWith("hold:") && Options.canHold(target.substring(5))) target = target.substring(5);
         if (Options.isTile(target)) return android.R.drawable.ic_menu_preferences;
         if (target.startsWith("fan:")) return R.drawable.ic_app_fan;
-        if (target.startsWith("media:")) return R.drawable.ic_smart;
+        if (target.startsWith("media:") || target.startsWith("chain:")) return R.drawable.ic_smart;
         switch (target) {
             case "action:record": return android.R.drawable.ic_btn_speak_now;
             case "action:assistant": return android.R.drawable.ic_btn_speak_now;
-            case "action:previous_app": return R.drawable.ic_recent;
+            case "action:back": return R.drawable.ic_back;
+            case "action:home": return android.R.drawable.ic_menu_view;
+            case "action:previous_app":
+            case "action:recents": return R.drawable.ic_recent;
             case "action:pause_torch": return R.drawable.ic_pause_torch;
             case "action:media_pause": return R.drawable.ic_pause;
-            case "action:hotspot": return R.drawable.ic_hotspot;
+            case "action:hotspot":
+            case "action:hotspot_on":
+            case "action:hotspot_off": return R.drawable.ic_hotspot;
             case "action:dnd_hour": return R.drawable.ic_dnd;
             case "action:data_slot1": return R.drawable.ic_sim1;
             case "action:data_slot2": return R.drawable.ic_sim2;
-            case "action:wifi_toggle": return R.drawable.ic_wifi;
-            case "action:data_toggle": return R.drawable.ic_data;
+            case "action:wifi_toggle":
+            case "action:wifi_on":
+            case "action:wifi_off": return R.drawable.ic_wifi;
+            case "action:data_toggle":
+            case "action:data_on":
+            case "action:data_off": return R.drawable.ic_data;
             case "action:data_sim": return R.drawable.ic_sim;
             case "action:torch": return R.drawable.ic_flashlight;
             case "action:screenshot": return R.drawable.ic_capture;

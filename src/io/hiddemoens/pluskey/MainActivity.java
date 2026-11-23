@@ -412,6 +412,10 @@ public final class MainActivity extends AppCompatActivity {
             settingsRow(connection, "Set up button", android.R.drawable.ic_menu_manage, setup::show);
             settingsRow(connection, "Connection settings", android.R.drawable.ic_menu_preferences, setup::advanced);
 
+            LinearLayout swipeCard = Ui.card(this, body);
+            Ui.text(this, swipeCard, "Edge swipes", 19, false);
+            settingsRow(swipeCard, "Set up edge swipes", R.drawable.ic_back, () -> EdgeSettings.show(this));
+
             LinearLayout updatesCard = Ui.card(this, body);
             Ui.text(this, updatesCard, "App updates", 19, false);
             settingsRow(updatesCard, "Check for updates", android.R.drawable.ic_popup_sync, this::checkUpdates);
@@ -613,7 +617,10 @@ public final class MainActivity extends AppCompatActivity {
             String current = mailbox.selected(gesture);
             Runnable timing = GesturePatterns.text(gesture).length() > 1 ? this::showClickInterval : null;
             new ChoicePicker(this, choice -> {
-                if (choice.target != null && choice.target.startsWith("configure:")) {
+                if ("chain:".equals(choice.target)) {
+                    ChainEditor.show(this, current, target -> saveChoice(gesture,
+                        new Targets.Choice(Targets.label(this, target), target)));
+                } else if (choice.target != null && choice.target.startsWith("configure:")) {
                     ComponentName component = ComponentName.unflattenFromString(choice.target.substring("configure:".length()));
                     configuringGesture = gesture;
                     configuringPackage = component.getPackageName();
@@ -639,14 +646,20 @@ public final class MainActivity extends AppCompatActivity {
             mailbox.select(gesture, choice.target);
             if (choice.target != null) Targets.remember(this, choice);
             showSelections();
-            if ("action:record".equals(choice.target) || "hold:action:record".equals(choice.target) ||
-                    choice.target != null && choice.target.startsWith("media:") && choice.target.contains("action:record")) {
-                ArrayList<String> missing = new ArrayList<>();
-                for (String permission : RecordingActivity.requiredPermissions())
-                    if (checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) missing.add(permission);
-                if (!missing.isEmpty()) requestPermissions(missing.toArray(new String[0]), 5);
-            }
+            requestRecordingFor(choice.target);
         } catch (IOException | IllegalArgumentException error) { toast(error.getMessage()); }
+    }
+    void requestRecordingFor(String target) {
+        if (target == null) return;
+        String[] steps = ActionChain.parse(target);
+        if ("action:record".equals(target) || "hold:action:record".equals(target)
+                || target.startsWith("media:") && target.contains("action:record")
+                || steps != null && java.util.Arrays.asList(steps).contains("action:record")) {
+            ArrayList<String> missing = new ArrayList<>();
+            for (String permission : RecordingActivity.requiredPermissions())
+                if (checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) missing.add(permission);
+            if (!missing.isEmpty()) requestPermissions(missing.toArray(new String[0]), 5);
+        }
     }
     private String systemAction(){try{return Settings.System.getString(getContentResolver(),Helper.ONEPLUS_ACTION_SETTING);}catch(Exception error){return null;}}
     private void showSelections(){
@@ -707,7 +720,7 @@ public final class MainActivity extends AppCompatActivity {
         }
         try{String target=mailbox.selected(gesture);if(target==null)return;
             if(target.startsWith("hold:")){toast("Hold the physical Plus Key to test this action");return;}
-            if(target.startsWith("tile:") || target.startsWith("action:") || Options.mediaBranches(target) != null){String current=mailbox.readStatus(System.currentTimeMillis());if(current!=null&&current.startsWith("Listening|")){mailbox.requestPreview(gesture);return;}toast("Start your button first to preview this action");return;}
+            if(target.startsWith("tile:") || target.startsWith("action:") || Options.mediaBranches(target) != null || ActionChain.parse(target) != null){String current=mailbox.readStatus(System.currentTimeMillis());if(current!=null&&current.startsWith("Listening|")){mailbox.requestPreview(gesture);return;}toast("Start your button first to preview this action");return;}
             startActivities(Targets.intents(target));
         }catch(Exception error){toast("Action unavailable. Choose another.");}
     }

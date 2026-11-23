@@ -1,8 +1,6 @@
 # PlusKey
 
-[![Download APK](https://img.shields.io/badge/Download-APK-2EA44F?style=for-the-badge&logo=github)](https://github.com/hiddemoens/PlusKey/releases/latest)
-
-**Moving from v1.7 or earlier?** [Download v1.8 directly](https://github.com/hiddemoens/PlusKey/releases/download/v1.8/PlusKey-1.8.apk), install it, and complete setup again. Once the new app handles your button, uninstall the previous version.
+This fork keeps the official PlusKey app ID and uses its own signing key. To install its test APK, uninstall the official build and complete setup again. Uninstalling removes your existing PlusKey assignments.
 
 Customize the OnePlus Plus Key with separate actions, apps, or app shortcuts for single, double, triple, and long presses. Built-in actions include flashlight, sound modes, screenshot, screen lock, notifications, quick settings, media, and volume.
 
@@ -14,12 +12,18 @@ Customize the OnePlus Plus Key with separate actions, apps, or app shortcuts for
 
 ## Install and setup
 
-Plus Key works with Shizuku 13 or later or standalone using Wireless debugging. Install the APK from the latest release’s **Assets**, then open **Settings** in Plus Key.
+Plus Key works with Shizuku 13 or later or standalone using Wireless debugging. Install the signed test APK, then open **Settings** in Plus Key.
 
 - **With Shizuku** — Start Shizuku and tap **Allow Shizuku** in Plus Key. [Shizuku setup](https://shizuku.rikka.app/)
 - **Standalone** — Follow the guided Wireless debugging setup and tap **Pair with code**. Keep Android’s pairing window open while entering the six-digit code in the Plus Key notification. After pairing, tap **Start** to reuse the saved connection.
 
 Optional **Automatic startup** uses a protected-settings permission to turn on Wireless debugging while starting the helper and turn it off once ready. OxygenOS may require **Disable system optimisation** in Developer options, which can increase background power use. Android may ask for approval on a new Wi-Fi network. If the button disconnects after a reboot or system termination, open Plus Key and tap **Start**.
+
+## Mapping actions
+
+Choose **Action chain** in the Actions picker to add and reorder built-in actions. A chain stops at the first failed step. For example, choose **Wi-Fi off → Mobile data on → Hotspot on** for one gesture, and **Hotspot off → Wi-Fi on → Mobile data off** for another.
+
+Open **Settings → Edge swipes** to enable the PlusKey edge service and turn on either handle. Each handle has separate straight-inward, diagonal-up, and diagonal-down assignments. Back, Home, and Recent apps work without the button helper. Chains that use privileged actions require the helper.
 
 ## Button behavior
 
@@ -37,7 +41,9 @@ Successful custom actions give brief haptic feedback. Plus Key observes native b
 
 ## Compatibility
 
-Tested on OnePlus 15 (CPH2747) running Android 17 and OxygenOS 17. Requires Android 11 or later to install. Other devices and firmware versions are unverified. Screen-off operation depends on whether the firmware delivers Plus Key events during standby.
+Upstream tested the button helper on OnePlus 15 (CPH2747) running Android 17 and OxygenOS 17. Requires Android 11 or later to install. Other devices and firmware versions are unverified. Screen-off operation depends on whether the firmware delivers Plus Key events during standby.
+
+To verify the fork on your phone, start the standalone helper and turn off the main Developer options switch. Try both network chains, including after a lock and unlock and with Wi-Fi off. Test all three swipe directions in each required banking app and confirm sign-in still works.
 
 ## Updates and privacy
 

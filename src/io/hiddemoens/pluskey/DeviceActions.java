@@ -213,6 +213,9 @@ final class DeviceActions {
             case "action:previous_app":
                 previousApp(context());
                 return;
+            case "action:back": code="KEYCODE_BACK"; break;
+            case "action:home": code="KEYCODE_HOME"; break;
+            case "action:recents": code="KEYCODE_APP_SWITCH"; break;
             case "action:media_pause":code="127";break;
             case "action:assistant":code=String.valueOf(android.view.KeyEvent.KEYCODE_VOICE_ASSIST);break;
             case "action:screenshot":code="120";break;case "action:lock":code="223";break;
@@ -224,7 +227,13 @@ final class DeviceActions {
         Context ctx=context();
         switch (action) {
             case "action:hotspot":
-                toggleHotspot(ctx);
+                int hotspot = hotspotState(ctx.getSystemService(WifiManager.class));
+                if (hotspot != 11 && hotspot != 13) throw new IllegalStateException("Hotspot changing or unavailable");
+                setHotspot(ctx, hotspot == 11);
+                return;
+            case "action:hotspot_on":
+            case "action:hotspot_off":
+                setHotspot(ctx, action.endsWith("_on"));
                 return;
             case "action:dnd_hour":
                 android.app.NotificationManager notifications = ctx.getSystemService(android.app.NotificationManager.class);
@@ -238,9 +247,15 @@ final class DeviceActions {
                 int state = ctx.getSystemService(WifiManager.class).getWifiState();
                 if (state == WifiManager.WIFI_STATE_UNKNOWN) throw new IllegalStateException("Wi-Fi state unavailable");
                 boolean enabled = state == WifiManager.WIFI_STATE_ENABLED || state == WifiManager.WIFI_STATE_ENABLING;
-                Helper.command("/system/bin/cmd", "wifi", "set-wifi-enabled", enabled ? "disabled" : "enabled");
+                setWifi(ctx, !enabled);
+                return;
+            case "action:wifi_on":
+            case "action:wifi_off":
+                setWifi(ctx, action.endsWith("_on"));
                 return;
             case "action:data_toggle":
+            case "action:data_on":
+            case "action:data_off":
             case "action:data_sim":
             case "action:data_slot1":
             case "action:data_slot2":
@@ -282,9 +297,54 @@ final class DeviceActions {
         throw new IllegalStateException("No previous app");
     }
 
+    private interface StateCheck { boolean reached() throws Exception; }
+
+    private static void awaitState(String setting, StateCheck check) throws Exception {
+        long deadline = android.os.SystemClock.elapsedRealtime() + 8_000;
+        do {
+            if (check.reached()) return;
+            Thread.sleep(100);
+        } while (android.os.SystemClock.elapsedRealtime() < deadline);
+        throw new IllegalStateException(setting + " did not reach the requested state");
+    }
+
+    private static void setWifi(Context ctx, boolean enabled) throws Exception {
+        WifiManager wifi = ctx.getSystemService(WifiManager.class);
+        int desired = enabled ? WifiManager.WIFI_STATE_ENABLED : WifiManager.WIFI_STATE_DISABLED;
+        int pending = enabled ? WifiManager.WIFI_STATE_ENABLING : WifiManager.WIFI_STATE_DISABLING;
+        int state = wifi.getWifiState();
+        if (state == desired) return;
+        if (state != pending) {
+            Helper.command("/system/bin/cmd", "wifi", "set-wifi-enabled", enabled ? "enabled" : "disabled");
+        }
+        awaitState("Wi-Fi", () -> wifi.getWifiState() == desired);
+    }
+
+    private static int hotspotState(WifiManager wifi) throws Exception {
+        return (int) WifiManager.class.getMethod("getWifiApState").invoke(wifi);
+    }
+
+    private static void setHotspot(Context ctx, boolean enabled) throws Exception {
+        WifiManager wifi = ctx.getSystemService(WifiManager.class);
+        int desired = enabled ? 13 : 11;
+        int pending = enabled ? 12 : 10;
+        int state = hotspotState(wifi);
+        if (state == desired) return;
+        if (state != pending) {
+            if (state == 10 || state == 12) {
+                awaitState("Hotspot", () -> {
+                    int current = hotspotState(wifi);
+                    return current == 11 || current == 13;
+                });
+            }
+            if (hotspotState(wifi) != desired) toggleHotspot(ctx);
+        }
+        awaitState("Hotspot", () -> hotspotState(wifi) == desired);
+    }
+
     private static void toggleHotspot(Context ctx) throws Exception {
         WifiManager wifi = ctx.getSystemService(WifiManager.class);
-        int state = (int) WifiManager.class.getMethod("getWifiApState").invoke(wifi);
+        int state = hotspotState(wifi);
         android.net.TetheringManager manager = ctx.getSystemService(android.net.TetheringManager.class);
         if (state == 13) { // WIFI_AP_STATE_ENABLED
             manager.getClass().getMethod("stopTethering", int.class).invoke(manager, 0);
@@ -320,8 +380,10 @@ final class DeviceActions {
         TelephonyManager phones = ctx.getSystemService(TelephonyManager.class);
         TelephonyManager source = phones.createForSubscriptionId(current);
         boolean enabled = source.isDataEnabled();
-        if (action.equals("action:data_toggle")) {
-            source.setDataEnabled(!enabled);
+        if (action.equals("action:data_toggle") || action.equals("action:data_on") || action.equals("action:data_off")) {
+            boolean desired = action.equals("action:data_toggle") ? !enabled : action.endsWith("_on");
+            if (enabled != desired) source.setDataEnabled(desired);
+            awaitState("Mobile data", () -> source.isDataEnabled() == desired);
             return;
         }
 

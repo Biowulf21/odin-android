@@ -1,12 +1,32 @@
 package io.hiddemoens.pluskey;
 final class Policy {
     static boolean shouldWakeScreen(String target) {
+        String[] steps = ActionChain.parse(target);
+        if (steps != null) {
+            boolean wake = false;
+            for (String step : steps) {
+                if (!mayRunWhileLocked(step)) return false;
+                wake |= shouldWakeScreen(step);
+            }
+            return wake;
+        }
         return Options.fanApps(target) != null || "action:assistant".equals(target) || Options.isLockedAppAction(target) || Options.isSecureCamera(target) || Options.isLockedActivity(target);
     }
 
     static boolean mayRunWhileLocked(String target) {
+        String[] steps = ActionChain.parse(target);
+        if (steps != null) {
+            for (String step : steps) if (!mayRunWhileLocked(step)) return false;
+            return true;
+        }
         if (shouldWakeScreen(target)) return true;
         switch (target) {
+            case "action:wifi_on":
+            case "action:wifi_off":
+            case "action:data_on":
+            case "action:data_off":
+            case "action:hotspot_on":
+            case "action:hotspot_off":
             case "action:pause_torch":
             case "action:media_pause":
             case "action:hotspot":

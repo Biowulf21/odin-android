@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="edge_service_description">Detects swipes on the configured edge handles and runs the actions you assign. It does not read the contents of other apps.</string>
+</resources>
