@@ -1,8 +1,10 @@
 # Odin
 
-This fork keeps the official PlusKey app ID and uses its own signing key. If you’re switching from the official build, uninstall it and complete setup again. Uninstalling removes your existing PlusKey assignments. Install Odin over a previous build from this fork to keep your mappings.
-
 Odin maps OnePlus Plus Key presses and Android edge swipes to actions, apps, or action chains. Built-in actions include flashlight, sound modes, screenshot, screen lock, notifications, quick settings, media, and volume.
+
+<img src="docs/screenshots/button.png" alt="Odin button mappings" width="240"> <img src="docs/screenshots/edge-swipes.png" alt="Odin edge swipe mappings" width="240"> <img src="docs/screenshots/swipe-indicator.png" alt="Odin swipe indicator preview with direction boundaries" width="240">
+
+This fork keeps the official PlusKey app ID and uses its own signing key. If you’re switching from the official build, uninstall it and complete setup again. Uninstalling removes your existing PlusKey assignments. Install Odin over a previous build from this fork to keep your mappings.
 
 ## Install and setup
 
@@ -17,7 +19,7 @@ Optional **Automatic startup** uses a protected-settings permission to turn on W
 
 Open any press or swipe mapping and choose **Add action**. Add one action or keep adding steps. Use a step’s menu to reorder or remove it. A chain stops at the first failed step. For example, choose **Wi-Fi off → Mobile data on → Hotspot on** for one gesture, and **Hotspot off → Wi-Fi on → Mobile data off** for another.
 
-Open the **Edge swipes** tab to enable the Odin edge service and turn on either handle. Each handle has separate straight-inward, diagonal-up, and diagonal-down assignments. Handles stay invisible between gestures. A chevron follows your swipe near the edge. The chevron points in the direction of your swipe from its starting point. Use **Swipe indicator** to adjust its size and color or set the **Release distance** and **Direction buffer**. The draggable preview shows the straight-swipe band and a dashed line at the release distance as you adjust them. The phone vibrates once when the swipe is ready to release. Open **Handle size & position** to see and drag the preview. Tall handles sit just inside the system Back area when gesture navigation is active. Back, Home, and Recent apps work without the button helper. Chains that use privileged actions require the helper.
+Open the **Edge swipes** tab to enable the Odin edge service and turn on either handle. Each handle has separate straight-inward, diagonal-up, and diagonal-down assignments. Handles stay invisible between gestures. The keyboard area is reserved for typing while the keyboard is open. You can still start edge swipes along the part of a handle above it. A chevron follows your swipe near the edge. The chevron points in the direction of your swipe from its starting point. Use **Swipe indicator** to adjust its size and color or set the **Release distance** and **Direction buffer**. The draggable preview shows the straight-swipe band and a dashed line at the release distance as you adjust them. The phone vibrates once when the swipe is ready to release. Open **Handle size & position** to see and drag the preview. Tall handles sit just inside the system Back area when gesture navigation is active. Back, Home, and Recent apps work without the button helper. Chains that use privileged actions require the helper.
 
 ## Button behavior
 
@@ -51,6 +53,10 @@ Requires JDK 21, Android SDK 37, and Build Tools 36.0.0. Supply the keystore pas
 
 For public releases, increment Android’s `versionCode`, use a numeric tag such as `v1.5.1`, and attach one signed APK with a GitHub SHA-256 asset digest. Publish a regular GitHub release so the app can offer the update.
 
+## Support
+
+[Buy me a coffee](https://buymeacoffee.com/biowulf21), or open **Settings → Support** in Odin.
+
 ## License
 
-[Apache License 2.0](LICENSE). Bundled dependency licenses are listed in [THIRD_PARTY.md](THIRD_PARTY.md). Odin is independent of OnePlus.
+[Apache License 2.0](LICENSE). Bundled dependency licenses are listed in [THIRD_PARTY.md](THIRD_PARTY.md). Odin is based on [PlusKey by Hidde Moens](https://github.com/hiddemoens/PlusKey). See [NOTICE](NOTICE) for attribution. Odin is independent of OnePlus.

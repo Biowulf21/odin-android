@@ -1,6 +1,6 @@
 package io.hiddemoens.pluskey;
 final class UpdatePolicy {
- static final String REPOSITORY = "James-Slot-app/Odin";
+ static final String REPOSITORY = "Biowulf21/odin-android";
  static boolean newer(String release,String current){
   if(release==null||current==null)return false;
   release=release.replaceFirst("^v","");

@@ -351,6 +351,17 @@ public final class MainActivity extends AppCompatActivity {
             automatic.setChecked(automaticUpdates());
             automatic.setOnCheckedChangeListener((button, checked) -> updates.setAutomatic(checked));
             updatesCard.addView(automatic);
+
+            LinearLayout supportCard = Ui.card(this, body);
+            Ui.text(this, supportCard, "Support", 19, false);
+            settingsRow(supportCard, "Buy me a coffee", android.R.drawable.ic_menu_view, () -> {
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW,
+                        android.net.Uri.parse("https://buymeacoffee.com/biowulf21")));
+                } catch (android.content.ActivityNotFoundException unavailable) {
+                    android.widget.Toast.makeText(this, "No browser available", android.widget.Toast.LENGTH_SHORT).show();
+                }
+            });
         }
         settingsBack.setEnabled(true);
         updateNavigation(true);

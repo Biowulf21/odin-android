@@ -103,8 +103,11 @@ public final class EdgeService extends AccessibilityService {
             WindowManager.LayoutParams params = new WindowManager.LayoutParams(width, height,
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                    | WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
                     | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT);
-            params.gravity = Gravity.TOP | (left ? Gravity.LEFT : Gravity.RIGHT);
+            // Keep the handle anchored and let WindowManager clip the part behind the keyboard.
+            params.setFitInsetsTypes(params.getFitInsetsTypes() | WindowInsets.Type.ime());
+            params.gravity = Gravity.TOP | Gravity.DISPLAY_CLIP_VERTICAL | (left ? Gravity.LEFT : Gravity.RIGHT);
             params.x = EdgeSettings.handleInset(this, metrics, insets, left, height);
             params.y = insets.top + Math.round((room - height) * position / 100f);
             params.setTitle(left ? "Odin left handle" : "Odin right handle");
