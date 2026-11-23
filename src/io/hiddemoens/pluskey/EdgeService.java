@@ -5,10 +5,8 @@ import android.app.KeyguardManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
-import android.graphics.Insets;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
-import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
@@ -89,9 +87,8 @@ public final class EdgeService extends AccessibilityService {
     private void rebuildHandles() {
         hideSwipeArrow();
         WindowMetrics metrics = windows.getCurrentWindowMetrics();
-        Insets insets = metrics.getWindowInsets().getInsetsIgnoringVisibility(
-            WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout() | WindowInsets.Type.mandatorySystemGestures());
-        int room = Math.max(1, metrics.getBounds().height() - insets.top - insets.bottom);
+        android.graphics.Insets insets = EdgeSettings.handleInsets(metrics);
+        int room = EdgeSettings.handleRoom(metrics, insets);
         for (int i = 0; i < handles.length; i++) {
             boolean left = i == 0;
             String side = left ? "left" : "right";
@@ -100,14 +97,15 @@ public final class EdgeService extends AccessibilityService {
                 continue;
             }
             int width = Ui.dp(this, prefs.getInt(side + ".width", EdgeSettings.WIDTH));
-            int height = Math.min(room, Ui.dp(this, prefs.getInt(side + ".height", EdgeSettings.HEIGHT)));
+            int height = Math.min(room, Ui.dp(this, Math.min(EdgeSettings.maxHandleHeight(this, room),
+                prefs.getInt(side + ".height", EdgeSettings.HEIGHT))));
             int position = prefs.getInt(side + ".position", EdgeSettings.POSITION);
             WindowManager.LayoutParams params = new WindowManager.LayoutParams(width, height,
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
                     | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT);
             params.gravity = Gravity.TOP | (left ? Gravity.LEFT : Gravity.RIGHT);
-            params.x = left ? insets.left : insets.right;
+            params.x = EdgeSettings.handleInset(this, metrics, insets, left, height);
             params.y = insets.top + Math.round((room - height) * position / 100f);
             params.setTitle(left ? "PlusKey left handle" : "PlusKey right handle");
             View handle = handles[i];
@@ -125,11 +123,10 @@ public final class EdgeService extends AccessibilityService {
     }
 
     private boolean showSwipeArrow(boolean left, float fingerX, float fingerY, Rect display) {
-        int size = Ui.dp(this, 36);
-        int gap = Ui.dp(this, 10);
-        int x = Math.round(fingerX) + (left ? -gap - size : gap) - display.left;
+        int size = Ui.dp(this, prefs.getInt(EdgeSwipe.INDICATOR_SIZE_KEY, EdgeSwipe.INDICATOR_SIZE));
+        int x = EdgeSwipe.indicatorX(left, Math.round(fingerX) - display.left, display.width(), size,
+            Ui.dp(this, 10), Ui.dp(this, 72));
         int y = Math.round(fingerY) - size / 2 - display.top;
-        x = Math.max(0, Math.min(display.width() - size, x));
         y = Math.max(0, Math.min(display.height() - size, y));
         if (swipeArrow != null) {
             if (arrowLayout.x != x || arrowLayout.y != y) {
@@ -141,17 +138,7 @@ public final class EdgeService extends AccessibilityService {
         }
 
         ImageView arrow = new ImageView(this);
-        arrow.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
-        arrow.setImageResource(R.drawable.ic_back);
-        arrow.setScaleX(left ? -1 : 1);
-        int padding = Ui.dp(this, 8);
-        arrow.setPadding(padding, padding, padding, padding);
-        arrow.setColorFilter(0xffff902f);
-        arrow.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        GradientDrawable background = new GradientDrawable();
-        background.setShape(GradientDrawable.OVAL);
-        background.setColor(0xe6292726);
-        arrow.setBackground(background);
+        EdgeSettings.styleIndicator(arrow, left, prefs.getInt(EdgeSwipe.INDICATOR_COLOR_KEY, EdgeSwipe.INDICATOR_COLOR));
         WindowManager.LayoutParams layout = new WindowManager.LayoutParams(size, size,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE

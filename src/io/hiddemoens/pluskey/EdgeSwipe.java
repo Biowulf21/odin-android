@@ -4,6 +4,18 @@ final class EdgeSwipe {
     static final String[] LABELS = {"Straight inward", "Diagonal up", "Diagonal down"};
     static final String[] KEYS = {"straight", "up", "down"};
 
+    static final String INDICATOR_SIZE_KEY = "indicator_size";
+    static final String INDICATOR_COLOR_KEY = "indicator_color";
+    static final int INDICATOR_SIZE = 24;
+    static final int INDICATOR_COLOR = 0xffedf2f8;
+
+    static int indicatorX(boolean left, int fingerX, int screenWidth, int size, int gap, int maxBand) {
+        int fromEdge = left ? fingerX : screenWidth - fingerX;
+        int band = Math.min(maxBand, screenWidth / 5);
+        int offset = Math.max(0, Math.min(Math.max(0, band - size), fromEdge - gap - size));
+        return left ? offset : Math.max(0, screenWidth - size - offset);
+    }
+
     // Use signed inward distance so the same angles apply to either edge.
     static int direction(boolean left, float dx, float dy, float minimum) {
         float inward = left ? dx : -dx;

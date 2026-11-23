@@ -2,16 +2,23 @@ package io.hiddemoens.pluskey;
 
 import android.accessibilityservice.AccessibilityServiceInfo;
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Insets;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.WindowInsets;
+import android.view.WindowMetrics;
 import android.view.accessibility.AccessibilityManager;
+import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -29,6 +36,37 @@ final class EdgeSettings {
     static final int WIDTH = 20;
     static final int HEIGHT = 96;
     static final int POSITION = 50;
+
+    private static final String[] COLOR_LABELS = {"Soft white", "Mist blue", "Sea glass", "Lavender", "Amber"};
+    private static final int[] COLORS = {EdgeSwipe.INDICATOR_COLOR, 0xffa9c5e9, 0xff8ed9cc, 0xffc6b5ed, 0xffedc980};
+
+    static Insets handleInsets(WindowMetrics metrics) {
+        return metrics.getWindowInsets().getInsetsIgnoringVisibility(
+            WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout() | WindowInsets.Type.mandatorySystemGestures());
+    }
+
+    static int handleRoom(WindowMetrics metrics, Insets insets) {
+        return Math.max(1, metrics.getBounds().height() - insets.top - insets.bottom);
+    }
+
+    static int maxHandleHeight(Context context, int room) {
+        return Math.max(48, (int) (.85f * room / context.getResources().getDisplayMetrics().density));
+    }
+
+    static int handleInset(Context context, WindowMetrics metrics, Insets insets, boolean left, int height) {
+        int inset = left ? insets.left : insets.right;
+        if (height <= Ui.dp(context, 200)) return inset;
+        // Android only grants 200 dp of vertical Back-gesture exclusion per edge.
+        Insets systemGestures = metrics.getWindowInsets().getInsetsIgnoringVisibility(WindowInsets.Type.systemGestures());
+        return Math.max(inset, left ? systemGestures.left : systemGestures.right);
+    }
+
+    static void styleIndicator(ImageView view, boolean left, int color) {
+        view.setImageResource(R.drawable.ic_swipe_chevron);
+        view.setScaleX(left ? -1f : 1f);
+        view.setColorFilter(color);
+        view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+    }
 
     final LinearLayout page;
     private final MainActivity activity;
@@ -125,6 +163,7 @@ final class EdgeSettings {
             row.setTag(assignment);
         }
         Ui.button(activity, sidePage, "Handle size & position", false, view -> showGeometry(side));
+        Ui.button(activity, sidePage, "Swipe indicator", false, view -> showIndicator(left));
     }
 
     private Runnable rowClick(String key, String title, String fallback, LinearLayout row) {
@@ -153,10 +192,13 @@ final class EdgeSettings {
         body.setPadding(padding, Ui.dp(activity, 4), padding, padding);
         Ui.text(activity, body, "Drag the preview to move the handle.", 14, true);
         HandlePreview preview = new HandlePreview(side);
-        body.addView(preview, new LinearLayout.LayoutParams(-1, Ui.dp(activity, 154)));
-        slider(body, side + ".width", "Width", " dp", 12, 36, WIDTH, preview);
-        slider(body, side + ".height", "Height", " dp", 48, 192, HEIGHT, preview);
-        preview.position = slider(body, side + ".position", "Vertical position", "%", 0, 100, POSITION, preview);
+        body.addView(preview, new LinearLayout.LayoutParams(-1, Ui.dp(activity, 224)));
+        WindowMetrics metrics = activity.getWindowManager().getCurrentWindowMetrics();
+        int maxHeight = maxHandleHeight(activity, handleRoom(metrics, handleInsets(metrics)));
+        slider(body, side + ".width", "Width", " dp", 12, 48, WIDTH, preview::invalidate);
+        if (maxHeight > 48) slider(body, side + ".height", "Height", " dp", 48, maxHeight, HEIGHT, preview::invalidate);
+        preview.position = slider(body, side + ".position", "Vertical position", "%", 0, 100, POSITION, preview::invalidate);
+        Ui.text(activity, body, "Tall handles sit just inside the system Back area.", 13, true);
         ScrollView scroll = new ScrollView(activity);
         scroll.addView(body);
         new MaterialAlertDialogBuilder(activity)
@@ -165,8 +207,8 @@ final class EdgeSettings {
     }
 
     private Slider slider(LinearLayout body, String key, String label, String unit,
-            int low, int high, int defaultValue, HandlePreview preview) {
-        int value = prefs.getInt(key, defaultValue);
+            int low, int high, int defaultValue, Runnable refresh) {
+        int value = Math.max(low, Math.min(high, prefs.getInt(key, defaultValue)));
         TextView heading = Ui.text(activity, body, label + " · " + value + unit, 14, false);
         Slider slider = new Slider(activity);
         slider.setValueFrom(low);
@@ -180,10 +222,113 @@ final class EdgeSettings {
             int chosen = Math.round(position);
             heading.setText(label + " · " + chosen + unit);
             prefs.edit().putInt(key, chosen).apply();
-            preview.invalidate();
+            refresh.run();
         });
         body.addView(slider, new LinearLayout.LayoutParams(-1, -2));
         return slider;
+    }
+
+    private void showIndicator(boolean left) {
+        LinearLayout body = Ui.column(activity);
+        int padding = Ui.dp(activity, 24);
+        body.setPadding(padding, Ui.dp(activity, 4), padding, padding);
+        Ui.text(activity, body, "Drag across the preview to try the chevron.", 14, true);
+        FrameLayout stage = new FrameLayout(activity);
+        android.graphics.drawable.GradientDrawable surface = new android.graphics.drawable.GradientDrawable();
+        surface.setCornerRadius(Ui.dp(activity, 14));
+        surface.setColor(Ui.color(activity, com.google.android.material.R.attr.colorSurface));
+        stage.setBackground(surface);
+        body.addView(stage, new LinearLayout.LayoutParams(-1, Ui.dp(activity, 114)));
+        ImageView chevron = new ImageView(activity);
+        stage.addView(chevron, new FrameLayout.LayoutParams(0, 0));
+        Runnable preview = () -> {
+            int size = Ui.dp(activity, prefs.getInt(EdgeSwipe.INDICATOR_SIZE_KEY, EdgeSwipe.INDICATOR_SIZE));
+            if (chevron.getLayoutParams().width != size) {
+                chevron.setLayoutParams(new FrameLayout.LayoutParams(size, size));
+            }
+            styleIndicator(chevron, left, prefs.getInt(EdgeSwipe.INDICATOR_COLOR_KEY, EdgeSwipe.INDICATOR_COLOR));
+            chevron.setX(left ? Ui.dp(activity, 8) : Math.max(0, stage.getWidth() - size - Ui.dp(activity, 8)));
+            chevron.setY(Math.max(0, (stage.getHeight() - size) / 2f));
+        };
+        stage.addOnLayoutChangeListener((v, l, t, r, b, oldL, oldT, oldR, oldB) -> preview.run());
+        stage.setOnTouchListener((view, event) -> {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    stage.getParent().requestDisallowInterceptTouchEvent(true);
+                    // The preview uses the same bounds as the live indicator.
+                case MotionEvent.ACTION_MOVE:
+                case MotionEvent.ACTION_UP:
+                    int size = chevron.getLayoutParams().width;
+                    chevron.setX(EdgeSwipe.indicatorX(left, Math.round(event.getX()), stage.getWidth(), size,
+                        Ui.dp(activity, 10), Ui.dp(activity, 72)));
+                    chevron.setY(Math.max(0, Math.min(stage.getHeight() - size, event.getY() - size / 2f)));
+                    return true;
+                case MotionEvent.ACTION_CANCEL:
+                    return true;
+                default:
+                    return false;
+            }
+        });
+        slider(body, EdgeSwipe.INDICATOR_SIZE_KEY, "Size", " dp", 16, 52, EdgeSwipe.INDICATOR_SIZE, preview);
+        MaterialButton color = Ui.button(activity, body, "Color", false, view ->
+            showIndicatorColor(preview, (MaterialButton) view));
+        showColorOn(color);
+        ScrollView scroll = new ScrollView(activity);
+        scroll.addView(body);
+        new MaterialAlertDialogBuilder(activity).setTitle("Swipe indicator")
+            .setView(scroll).setPositiveButton("Done", null).show();
+    }
+
+    private void showColorOn(MaterialButton button) {
+        int color = prefs.getInt(EdgeSwipe.INDICATOR_COLOR_KEY, EdgeSwipe.INDICATOR_COLOR);
+        android.graphics.drawable.GradientDrawable swatch = new android.graphics.drawable.GradientDrawable();
+        swatch.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        swatch.setColor(color);
+        button.setIcon(swatch);
+        button.setIconTint(null);
+        button.setIconSize(Ui.dp(activity, 16));
+    }
+
+    private void showIndicatorColor(Runnable preview, MaterialButton button) {
+        int selected = prefs.getInt(EdgeSwipe.INDICATOR_COLOR_KEY, EdgeSwipe.INDICATOR_COLOR);
+        int index = -1;
+        for (int i = 0; i < COLORS.length; i++) if (COLORS[i] == selected) index = i;
+        java.util.function.IntConsumer save = color -> {
+            prefs.edit().putInt(EdgeSwipe.INDICATOR_COLOR_KEY, color).apply();
+            showColorOn(button);
+            preview.run();
+        };
+        new MaterialAlertDialogBuilder(activity).setTitle("Chevron color")
+            .setSingleChoiceItems(COLOR_LABELS, index, (dialog, which) -> {
+                save.accept(COLORS[which]);
+                dialog.dismiss();
+            })
+            .setNeutralButton("Custom color", (dialog, which) -> showCustomColor(selected, save))
+            .setNegativeButton("Cancel", null).show();
+    }
+
+    private void showCustomColor(int current, java.util.function.IntConsumer save) {
+        LinearLayout body = Ui.column(activity);
+        int padding = Ui.dp(activity, 24);
+        body.setPadding(padding, 0, padding, padding);
+        EditText input = new EditText(activity);
+        input.setSingleLine(true);
+        input.setText(String.format(java.util.Locale.ROOT, "#%06X", current & 0xffffff));
+        input.setSelectAllOnFocus(true);
+        input.setContentDescription("Hex color");
+        body.addView(input);
+        androidx.appcompat.app.AlertDialog dialog = new MaterialAlertDialogBuilder(activity)
+            .setTitle("Custom color").setView(body).setNegativeButton("Cancel", null)
+            .setPositiveButton("Apply", null).show();
+        dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener(view -> {
+            String color = input.getText().toString().trim();
+            if (!color.matches("#?[0-9a-fA-F]{6}")) {
+                input.setError("Enter a six-digit hex color");
+                return;
+            }
+            save.accept(Color.parseColor(color.startsWith("#") ? color : "#" + color));
+            dialog.dismiss();
+        });
     }
 
     private final class HandlePreview extends View {
@@ -192,7 +337,7 @@ final class EdgeSettings {
         private final RectF handle = new RectF();
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private Slider position;
-        private float grabOffset;
+        private float grabOffset, usableTop, travel;
 
         HandlePreview(String side) {
             super(activity);
@@ -202,7 +347,10 @@ final class EdgeSettings {
 
         @Override protected void onDraw(Canvas canvas) {
             float margin = Ui.dp(activity, 8);
-            android.graphics.Rect screen = activity.getWindowManager().getCurrentWindowMetrics().getBounds();
+            WindowMetrics metrics = activity.getWindowManager().getCurrentWindowMetrics();
+            android.graphics.Rect screen = metrics.getBounds();
+            Insets insets = handleInsets(metrics);
+            int room = handleRoom(metrics, insets);
             float height = getHeight() - 2 * margin;
             float width = Math.min(getWidth() - 2 * margin, height * screen.width() / Math.max(1, screen.height()));
             float left = (getWidth() - width) / 2;
@@ -217,9 +365,15 @@ final class EdgeSettings {
 
             float scale = height / Math.max(1, screen.height());
             float handleWidth = Math.max(1f, Ui.dp(activity, prefs.getInt(side + ".width", WIDTH)) * scale);
-            float handleHeight = Math.min(height, Ui.dp(activity, prefs.getInt(side + ".height", HEIGHT)) * scale);
-            float top = margin + (height - handleHeight) * prefs.getInt(side + ".position", POSITION) / 100f;
-            float x = side.equals("left") ? display.left : display.right - handleWidth;
+            int heightPx = Math.min(room, Ui.dp(activity, Math.min(maxHandleHeight(activity, room),
+                prefs.getInt(side + ".height", HEIGHT))));
+            float handleHeight = heightPx * scale;
+            usableTop = margin + insets.top * scale;
+            travel = (room - heightPx) * scale;
+            float top = usableTop + travel * prefs.getInt(side + ".position", POSITION) / 100f;
+            boolean onLeft = side.equals("left");
+            float inset = handleInset(activity, metrics, insets, onLeft, heightPx) * width / Math.max(1, screen.width());
+            float x = onLeft ? display.left + inset : display.right - handleWidth - inset;
             handle.set(x, top, x + handleWidth, top + handleHeight);
             paint.setColor(Ui.color(activity, androidx.appcompat.R.attr.colorPrimary));
             canvas.drawRoundRect(handle, handleWidth / 2, handleWidth / 2, paint);
@@ -247,9 +401,8 @@ final class EdgeSettings {
         }
 
         private void setPosition(float y) {
-            float travel = display.height() - handle.height();
             if (travel <= 0) return;
-            int percent = Math.round(100 * (y - grabOffset - display.top) / travel);
+            int percent = Math.round(100 * (y - grabOffset - usableTop) / travel);
             position.setValue(Math.max(0, Math.min(100, percent)));
         }
     }

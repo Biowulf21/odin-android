@@ -37,6 +37,11 @@ public final class ChainTest {
             resumed.move(inward, -20);
             check(resumed.finish(inward * 2, -20) == 0, "horizontal ending clears an earlier turn");
         }
+        check(EdgeSwipe.indicatorX(true, 0, 400, 24, 8, 72) == 0, "left indicator starts at edge");
+        check(EdgeSwipe.indicatorX(true, 60, 400, 24, 8, 72) == 28, "indicator follows nearby movement");
+        check(EdgeSwipe.indicatorX(true, 380, 400, 24, 8, 72) == 48, "left indicator stays in outer band");
+        check(EdgeSwipe.indicatorX(false, 20, 400, 24, 8, 72) == 328, "right indicator mirrors left");
+        check(EdgeSwipe.indicatorX(true, 100, 180, 48, 8, 72) == 0, "large indicator stays at edge on narrow screen");
         List<String> actions = Arrays.asList("action:back", "action:data_on", "action:hotspot_on");
         String target = ActionChain.encode(actions);
         check(Options.validTarget(target), "valid chain");
