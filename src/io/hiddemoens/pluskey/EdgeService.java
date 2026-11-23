@@ -8,6 +8,7 @@ import android.content.res.Configuration;
 import android.graphics.Insets;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
@@ -19,6 +20,7 @@ import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.view.WindowMetrics;
 import android.view.accessibility.AccessibilityEvent;
+import android.widget.ImageView;
 import android.widget.Toast;
 import java.io.IOException;
 import java.util.Collections;
@@ -39,6 +41,8 @@ public final class EdgeService extends AccessibilityService {
     private SharedPreferences prefs;
     private WindowManager windows;
     private Mailbox mailbox;
+    private ImageView swipeArrow;
+    private WindowManager.LayoutParams arrowLayout;
     private volatile boolean connected;
 
     @Override protected void onServiceConnected() {
@@ -68,12 +72,13 @@ public final class EdgeService extends AccessibilityService {
 
     private void disconnect() {
         connected = false;
+        hideSwipeArrow();
         if (prefs != null) prefs.unregisterOnSharedPreferenceChangeListener(onChange);
         for (int i = 0; i < handles.length; i++) removeHandle(i);
     }
 
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {}
-    @Override public void onInterrupt() {}
+    @Override public void onInterrupt() { hideSwipeArrow(); }
 
     private void removeHandle(int index) {
         if (handles[index] == null) return;
@@ -82,6 +87,7 @@ public final class EdgeService extends AccessibilityService {
     }
 
     private void rebuildHandles() {
+        hideSwipeArrow();
         WindowMetrics metrics = windows.getCurrentWindowMetrics();
         Insets insets = metrics.getWindowInsets().getInsetsIgnoringVisibility(
             WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout() | WindowInsets.Type.mandatorySystemGestures());
@@ -118,11 +124,67 @@ public final class EdgeService extends AccessibilityService {
         }
     }
 
+    private boolean showSwipeArrow(boolean left, float fingerX, float fingerY, Rect display) {
+        int size = Ui.dp(this, 36);
+        int gap = Ui.dp(this, 10);
+        int x = Math.round(fingerX) + (left ? -gap - size : gap) - display.left;
+        int y = Math.round(fingerY) - size / 2 - display.top;
+        x = Math.max(0, Math.min(display.width() - size, x));
+        y = Math.max(0, Math.min(display.height() - size, y));
+        if (swipeArrow != null) {
+            if (arrowLayout.x != x || arrowLayout.y != y) {
+                arrowLayout.x = x;
+                arrowLayout.y = y;
+                windows.updateViewLayout(swipeArrow, arrowLayout);
+            }
+            return true;
+        }
+
+        ImageView arrow = new ImageView(this);
+        arrow.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
+        arrow.setImageResource(R.drawable.ic_back);
+        arrow.setScaleX(left ? -1 : 1);
+        int padding = Ui.dp(this, 8);
+        arrow.setPadding(padding, padding, padding, padding);
+        arrow.setColorFilter(0xffff902f);
+        arrow.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        GradientDrawable background = new GradientDrawable();
+        background.setShape(GradientDrawable.OVAL);
+        background.setColor(0xe6292726);
+        arrow.setBackground(background);
+        WindowManager.LayoutParams layout = new WindowManager.LayoutParams(size, size,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT);
+        layout.gravity = Gravity.TOP | Gravity.LEFT;
+        layout.setFitInsetsTypes(0);
+        layout.x = x;
+        layout.y = y;
+        layout.setTitle("PlusKey swipe arrow");
+        try {
+            windows.addView(arrow, layout);
+        } catch (WindowManager.BadTokenException unavailable) {
+            return false;
+        }
+        swipeArrow = arrow;
+        arrowLayout = layout;
+        return true;
+    }
+
+    private void hideSwipeArrow() {
+        if (swipeArrow == null) return;
+        windows.removeViewImmediate(swipeArrow);
+        swipeArrow = null;
+        arrowLayout = null;
+    }
+
     private final class SwipeListener implements View.OnTouchListener {
         private final boolean left;
         private final String side;
         private float startX, startY;
         private EdgeSwipe.Stroke stroke;
+        private Rect display;
+        private boolean arrowUnavailable;
 
         SwipeListener(boolean left, String side) {
             this.left = left;
@@ -134,6 +196,8 @@ public final class EdgeService extends AccessibilityService {
                 case MotionEvent.ACTION_DOWN:
                     if (!unlocked()) return false;
                     stroke = new EdgeSwipe.Stroke(left, Ui.dp(EdgeService.this, 24));
+                    display = windows.getCurrentWindowMetrics().getBounds();
+                    arrowUnavailable = false;
                     startX = event.getX();
                     startY = event.getY();
                     return true;
@@ -142,14 +206,20 @@ public final class EdgeService extends AccessibilityService {
                         for (int i = 0; i < event.getHistorySize(); i++) {
                             stroke.move(event.getHistoricalX(i) - startX, event.getHistoricalY(i) - startY);
                         }
-                        stroke.move(event.getX() - startX, event.getY() - startY);
+                        float dx = event.getX() - startX;
+                        stroke.move(dx, event.getY() - startY);
+                        if (!arrowUnavailable && (swipeArrow != null || (left ? dx : -dx) >= Ui.dp(EdgeService.this, 8))) {
+                            arrowUnavailable = !showSwipeArrow(left, event.getRawX(), event.getRawY(), display);
+                        }
                     }
                     break;
                 case MotionEvent.ACTION_POINTER_DOWN:
                 case MotionEvent.ACTION_CANCEL:
                     stroke = null;
+                    hideSwipeArrow();
                     break;
                 case MotionEvent.ACTION_UP:
+                    hideSwipeArrow();
                     if (stroke != null) {
                         int direction = stroke.finish(event.getX() - startX, event.getY() - startY);
                         if (direction >= 0) trigger(prefs.getString(side + "." + EdgeSwipe.KEYS[direction],
