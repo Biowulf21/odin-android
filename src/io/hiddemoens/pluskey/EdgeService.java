@@ -8,7 +8,6 @@ import android.content.res.Configuration;
 import android.graphics.Insets;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
-import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
@@ -115,12 +114,6 @@ public final class EdgeService extends AccessibilityService {
             } else {
                 windows.updateViewLayout(handle, params);
             }
-            int margin = Math.max(0, width - Ui.dp(this, 4));
-            GradientDrawable mark = new GradientDrawable();
-            mark.setColor(0x60808080);
-            mark.setCornerRadius(Ui.dp(this, 5));
-            handle.setBackground(new android.graphics.drawable.InsetDrawable(mark, left ? 0 : margin,
-                0, left ? margin : 0, 0));
             handle.setSystemGestureExclusionRects(Collections.singletonList(new Rect(0, 0, width, height)));
         }
     }
@@ -129,7 +122,7 @@ public final class EdgeService extends AccessibilityService {
         private final boolean left;
         private final String side;
         private float startX, startY;
-        private boolean tracking;
+        private EdgeSwipe.Stroke stroke;
 
         SwipeListener(boolean left, String side) {
             this.left = left;
@@ -139,22 +132,30 @@ public final class EdgeService extends AccessibilityService {
         @Override public boolean onTouch(View view, MotionEvent event) {
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
-                    tracking = unlocked();
-                    startX = event.getRawX();
-                    startY = event.getRawY();
-                    return tracking;
+                    if (!unlocked()) return false;
+                    stroke = new EdgeSwipe.Stroke(left, Ui.dp(EdgeService.this, 24));
+                    startX = event.getX();
+                    startY = event.getY();
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    if (stroke != null) {
+                        for (int i = 0; i < event.getHistorySize(); i++) {
+                            stroke.move(event.getHistoricalX(i) - startX, event.getHistoricalY(i) - startY);
+                        }
+                        stroke.move(event.getX() - startX, event.getY() - startY);
+                    }
+                    break;
                 case MotionEvent.ACTION_POINTER_DOWN:
                 case MotionEvent.ACTION_CANCEL:
-                    tracking = false;
+                    stroke = null;
                     break;
                 case MotionEvent.ACTION_UP:
-                    if (tracking) {
-                        int direction = EdgeSwipe.direction(left, event.getRawX() - startX,
-                            event.getRawY() - startY, Ui.dp(EdgeService.this, 24));
+                    if (stroke != null) {
+                        int direction = stroke.finish(event.getX() - startX, event.getY() - startY);
                         if (direction >= 0) trigger(prefs.getString(side + "." + EdgeSwipe.KEYS[direction],
                             direction == 0 ? "action:back" : ""));
                     }
-                    tracking = false;
+                    stroke = null;
                     break;
             }
             return true;

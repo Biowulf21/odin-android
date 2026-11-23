@@ -20,6 +20,22 @@ public final class ChainTest {
             check(EdgeSwipe.direction(left, inward, 150, 24) == -1, "vertical");
             check(EdgeSwipe.direction(left, -inward, 0, 24) == -1, "outward");
             check(EdgeSwipe.direction(left, inward / 4, 0, 24) == -1, "too short");
+            check(EdgeSwipe.direction(left, inward, -24, 24) == 1, "shallow up");
+            check(EdgeSwipe.direction(left, inward, 12, 24) == 0, "straight with a small drift");
+            EdgeSwipe.Stroke up = new EdgeSwipe.Stroke(left, 24);
+            up.move(inward, 0);
+            up.move(inward * 2, 0);
+            check(up.finish(inward * 2, -28) == 1, "late upward turn");
+            EdgeSwipe.Stroke down = new EdgeSwipe.Stroke(left, 24);
+            down.move(inward / 2, 0);
+            check(down.finish(inward / 2, 150) == 2, "steep downward turn after an inward swipe");
+            EdgeSwipe.Stroke vertical = new EdgeSwipe.Stroke(left, 24);
+            vertical.move(0, 60);
+            check(vertical.finish(inward / 2, 150) == -1, "vertical scroll never committed inward");
+            EdgeSwipe.Stroke resumed = new EdgeSwipe.Stroke(left, 24);
+            resumed.move(inward, 0);
+            resumed.move(inward, -20);
+            check(resumed.finish(inward * 2, -20) == 0, "horizontal ending clears an earlier turn");
         }
         List<String> actions = Arrays.asList("action:back", "action:data_on", "action:hotspot_on");
         String target = ActionChain.encode(actions);

@@ -4,8 +4,12 @@ import android.accessibilityservice.AccessibilityServiceInfo;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.RectF;
 import android.provider.Settings;
 import android.text.TextUtils;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.accessibility.AccessibilityManager;
 import android.widget.ImageView;
@@ -39,7 +43,7 @@ final class EdgeSettings {
         int padding = Ui.dp(activity, 20);
         page.setPadding(padding, padding, padding, Ui.dp(activity, 24));
         Ui.heading(activity, page, "Edge swipe mappings");
-        Ui.text(activity, page, "Set an action or sequence for each swipe direction.", 14, true);
+        Ui.text(activity, page, "Assign an action or sequence to each direction. The handles are invisible during use.", 14, true);
 
         LinearLayout setup = Ui.card(activity, page);
         setupCard = (View) setup.getParent();
@@ -147,9 +151,12 @@ final class EdgeSettings {
         LinearLayout body = Ui.column(activity);
         int padding = Ui.dp(activity, 24);
         body.setPadding(padding, Ui.dp(activity, 4), padding, padding);
-        slider(body, side + ".width", "Width", " dp", 12, 36, WIDTH);
-        slider(body, side + ".height", "Height", " dp", 48, 192, HEIGHT);
-        slider(body, side + ".position", "Vertical position", "%", 0, 100, POSITION);
+        Ui.text(activity, body, "Drag the preview to move the handle.", 14, true);
+        HandlePreview preview = new HandlePreview(side);
+        body.addView(preview, new LinearLayout.LayoutParams(-1, Ui.dp(activity, 154)));
+        slider(body, side + ".width", "Width", " dp", 12, 36, WIDTH, preview);
+        slider(body, side + ".height", "Height", " dp", 48, 192, HEIGHT, preview);
+        preview.position = slider(body, side + ".position", "Vertical position", "%", 0, 100, POSITION, preview);
         ScrollView scroll = new ScrollView(activity);
         scroll.addView(body);
         new MaterialAlertDialogBuilder(activity)
@@ -157,8 +164,8 @@ final class EdgeSettings {
             .setView(scroll).setPositiveButton("Done", null).show();
     }
 
-    private void slider(LinearLayout body, String key, String label, String unit,
-            int low, int high, int defaultValue) {
+    private Slider slider(LinearLayout body, String key, String label, String unit,
+            int low, int high, int defaultValue, HandlePreview preview) {
         int value = prefs.getInt(key, defaultValue);
         TextView heading = Ui.text(activity, body, label + " · " + value + unit, 14, false);
         Slider slider = new Slider(activity);
@@ -172,8 +179,78 @@ final class EdgeSettings {
         slider.addOnChangeListener((view, position, fromUser) -> {
             int chosen = Math.round(position);
             heading.setText(label + " · " + chosen + unit);
-            if (fromUser) prefs.edit().putInt(key, chosen).apply();
+            prefs.edit().putInt(key, chosen).apply();
+            preview.invalidate();
         });
         body.addView(slider, new LinearLayout.LayoutParams(-1, -2));
+        return slider;
+    }
+
+    private final class HandlePreview extends View {
+        private final String side;
+        private final RectF display = new RectF();
+        private final RectF handle = new RectF();
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private Slider position;
+        private float grabOffset;
+
+        HandlePreview(String side) {
+            super(activity);
+            this.side = side;
+            setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+
+        @Override protected void onDraw(Canvas canvas) {
+            float margin = Ui.dp(activity, 8);
+            android.graphics.Rect screen = activity.getWindowManager().getCurrentWindowMetrics().getBounds();
+            float height = getHeight() - 2 * margin;
+            float width = Math.min(getWidth() - 2 * margin, height * screen.width() / Math.max(1, screen.height()));
+            float left = (getWidth() - width) / 2;
+            display.set(left, margin, left + width, margin + height);
+            paint.setColor(Ui.color(activity, com.google.android.material.R.attr.colorSurface));
+            canvas.drawRoundRect(display, margin, margin, paint);
+            paint.setColor(Ui.color(activity, com.google.android.material.R.attr.colorOutlineVariant));
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(Ui.dp(activity, 1));
+            canvas.drawRoundRect(display, margin, margin, paint);
+            paint.setStyle(Paint.Style.FILL);
+
+            float scale = height / Math.max(1, screen.height());
+            float handleWidth = Math.max(1f, Ui.dp(activity, prefs.getInt(side + ".width", WIDTH)) * scale);
+            float handleHeight = Math.min(height, Ui.dp(activity, prefs.getInt(side + ".height", HEIGHT)) * scale);
+            float top = margin + (height - handleHeight) * prefs.getInt(side + ".position", POSITION) / 100f;
+            float x = side.equals("left") ? display.left : display.right - handleWidth;
+            handle.set(x, top, x + handleWidth, top + handleHeight);
+            paint.setColor(Ui.color(activity, androidx.appcompat.R.attr.colorPrimary));
+            canvas.drawRoundRect(handle, handleWidth / 2, handleWidth / 2, paint);
+        }
+
+        @Override public boolean onTouchEvent(MotionEvent event) {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    float margin = Ui.dp(activity, 12);
+                    if (event.getX() < display.left - margin || event.getX() > display.right + margin) return false;
+                    getParent().requestDisallowInterceptTouchEvent(true);
+                    grabOffset = event.getY() >= handle.top && event.getY() <= handle.bottom
+                        ? event.getY() - handle.top : handle.height() / 2;
+                    setPosition(event.getY());
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                case MotionEvent.ACTION_UP:
+                    setPosition(event.getY());
+                    return true;
+                case MotionEvent.ACTION_CANCEL:
+                    return true;
+                default:
+                    return super.onTouchEvent(event);
+            }
+        }
+
+        private void setPosition(float y) {
+            float travel = display.height() - handle.height();
+            if (travel <= 0) return;
+            int percent = Math.round(100 * (y - grabOffset - display.top) / travel);
+            position.setValue(Math.max(0, Math.min(100, percent)));
+        }
     }
 }
