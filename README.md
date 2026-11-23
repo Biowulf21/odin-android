@@ -1,14 +1,8 @@
 # PlusKey
 
-This fork keeps the official PlusKey app ID and uses its own signing key. To install its test APK, uninstall the official build and complete setup again. Uninstalling removes your existing PlusKey assignments.
+This fork keeps the official PlusKey app ID and uses its own signing key. If you’re switching from the official build, uninstall it and complete setup again. Uninstalling removes your existing PlusKey assignments. If you already installed a build from this fork, install the update over it.
 
 Customize the OnePlus Plus Key with separate actions, apps, or app shortcuts for single, double, triple, and long presses. Built-in actions include flashlight, sound modes, screenshot, screen lock, notifications, quick settings, media, and volume.
-
-<p align="center">
-  <img src="docs/screenshots/press-assignments.png" width="32%" alt="Short, double, triple, and long press assignments">
-  <img src="docs/screenshots/action-picker.png" width="32%" alt="Built-in actions for short press">
-  <img src="docs/screenshots/press-timing.png" width="32%" alt="Press timing slider set to 200 ms">
-</p>
 
 ## Install and setup
 
@@ -21,9 +15,9 @@ Optional **Automatic startup** uses a protected-settings permission to turn on W
 
 ## Mapping actions
 
-Choose **Action chain** in the Actions picker to add and reorder built-in actions. A chain stops at the first failed step. For example, choose **Wi-Fi off → Mobile data on → Hotspot on** for one gesture, and **Hotspot off → Wi-Fi on → Mobile data off** for another.
+Open any press or swipe mapping and choose **Add action**. Add one action or keep adding steps. Use a step’s menu to reorder or remove it. A chain stops at the first failed step. For example, choose **Wi-Fi off → Mobile data on → Hotspot on** for one gesture, and **Hotspot off → Wi-Fi on → Mobile data off** for another.
 
-Open **Settings → Edge swipes** to enable the PlusKey edge service and turn on either handle. Each handle has separate straight-inward, diagonal-up, and diagonal-down assignments. Back, Home, and Recent apps work without the button helper. Chains that use privileged actions require the helper.
+Open the **Edge swipes** tab to enable the PlusKey edge service and turn on either handle. Each handle has separate straight-inward, diagonal-up, and diagonal-down assignments. Back, Home, and Recent apps work without the button helper. Chains that use privileged actions require the helper.
 
 ## Button behavior
 

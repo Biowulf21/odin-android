@@ -4,12 +4,7 @@ import android.content.*;
 import android.content.pm.*;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
-import androidx.coordinatorlayout.widget.CoordinatorLayout;
 import androidx.core.widget.NestedScrollView;
-import androidx.dynamicanimation.animation.SpringAnimation;
-import androidx.dynamicanimation.animation.SpringForce;
-import com.google.android.material.bottomsheet.BottomSheetBehavior;
-import com.google.android.material.bottomsheet.BottomSheetDragHandleView;
 import android.os.*;
 import android.provider.Settings;
 import android.text.TextUtils;
@@ -17,11 +12,11 @@ import android.view.*;
 import android.widget.*;
 import androidx.appcompat.app.AppCompatActivity;
 import com.google.android.material.button.MaterialButton;
-import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.progressindicator.LinearProgressIndicator;
 import com.google.android.material.slider.Slider;
 import com.google.android.material.slider.TickVisibilityMode;
+import com.google.android.material.tabs.TabLayout;
 import java.io.File;
 import java.io.IOException;
 import java.util.*;
@@ -43,14 +38,18 @@ public final class MainActivity extends AppCompatActivity {
     private androidx.appcompat.app.AlertDialog captureDialog;
     private boolean helperReady;
     private View longPressSetupCard;
-    private FrameLayout shelfPages;
-    private NestedScrollView shelfScroll;
-    private LinearLayout gesturesPage;
-    private ImageButton shelfNav;
+    private FrameLayout pageHost;
+    private NestedScrollView pageScroll;
+    private LinearLayout buttonPage;
+    private ImageButton settingsButton;
+    private TabLayout destinations;
+    private EdgeSettings edges;
+    private int activeDestination;
+    private final int[] destinationScroll = new int[2];
     private int previousScroll;
     private final androidx.activity.OnBackPressedCallback settingsBack =
         new androidx.activity.OnBackPressedCallback(false) {
-            @Override public void handleOnBackPressed() { returnToGestures(); }
+            @Override public void handleOnBackPressed() { returnToMain(); }
         };
     private static final int STATUS_GREEN = 0xff63dc96;
     private static final int STATUS_AMBER = 0xffffb454;
@@ -102,6 +101,7 @@ public final class MainActivity extends AppCompatActivity {
         super.onSaveInstanceState(state);
         state.putString("shortcutOwner", configuringPackage);
         state.putInt("shortcutGesture", configuringGesture);
+        state.putInt("destination", activeDestination);
     }
     protected void onCreate(Bundle saved){
         super.onCreate(saved);
@@ -114,73 +114,55 @@ public final class MainActivity extends AppCompatActivity {
         Shizuku.addRequestPermissionResultListener(shizukuPermission);
         try{if(mailbox.selected(KeyPress.SHORT)==null && getPackageManager().getLaunchIntentForPackage("com.google.ar.lens")!=null)mailbox.select(KeyPress.SHORT, Helper.LENS);}catch(Exception ignored){}
         if (mailboxDir != null) initializeLongPressDefault();
-        CoordinatorLayout page = new CoordinatorLayout(this);
-        FrameLayout header = new FrameLayout(this);
-        page.addView(header, new CoordinatorLayout.LayoutParams(-1, 1));
-        FrameLayout photoLayer = new FrameLayout(this);
-        header.addView(photoLayer, new FrameLayout.LayoutParams(-1, -1));
-        ImageView handset = new ImageView(this);
-        handset.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        handset.setImageResource(R.drawable.plus_key_header);
-        photoLayer.addView(handset, new FrameLayout.LayoutParams(-1, -1));
-        ImageView softPhoto = new ImageView(this);
-        softPhoto.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        softPhoto.setImageResource(R.drawable.plus_key_header_soft);
-        softPhoto.setAlpha(0f);
-        softPhoto.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        photoLayer.addView(softPhoto, new FrameLayout.LayoutParams(-1, -1));
-        LinearLayout heading = Ui.column(this);
-        heading.setPadding(dp(20), dp(12), dp(20), dp(16));
-        GradientDrawable titleShade = new GradientDrawable();
-        titleShade.setGradientType(GradientDrawable.RADIAL_GRADIENT);
-        titleShade.setGradientCenter(0f, 0f);
-        titleShade.setGradientRadius(dp(240));
-        titleShade.setColors(new int[] {0x86000000, 0x00000000});
-        View scrim = new View(this);
-        scrim.setBackground(titleShade);
-        scrim.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        header.addView(scrim, new FrameLayout.LayoutParams(-1, -1));
-        header.addView(heading, new FrameLayout.LayoutParams(-1, -2));
-        LinearLayout top = Ui.actions(this, heading);
-        TextView title=new TextView(this);title.setText("Plus Key");title.setTextSize(36);title.setTypeface(null,Typeface.BOLD);title.setTextColor(Ui.color(this,com.google.android.material.R.attr.colorOnSurface));top.addView(title,new LinearLayout.LayoutParams(0,-2,1));
-        status = Ui.text(this, heading, "Checking…", 16, false);
-        statusDot.setShape(GradientDrawable.OVAL);
-        statusDot.setSize(dp(8), dp(8));
-        statusDot.setColor(STATUS_AMBER);
-        status.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-        status.setCompoundDrawablePadding(dp(8));
-        status.setCompoundDrawablesRelativeWithIntrinsicBounds(statusDot, null, null, null);
-        LinearLayout root = Ui.column(this);
-        root.setPadding(dp(16), 0, dp(16), dp(28));
-        root.setClipChildren(false);
-        root.setClipToPadding(false);
+        LinearLayout window = Ui.column(this);
+        LinearLayout header = Ui.actions(this, window);
+        header.setPadding(dp(20), dp(8), dp(12), dp(8));
+        TextView title = new TextView(this);
+        title.setText("PlusKey");
+        title.setTextSize(30);
+        title.setTypeface(null, Typeface.BOLD);
+        title.setTextColor(Ui.color(this, com.google.android.material.R.attr.colorOnSurface));
+        header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        settingsButton = Ui.navigationButton(this);
+        header.addView(settingsButton, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        settingsButton.setOnClickListener(v -> {
+            if (settingsBack.isEnabled()) returnToMain();
+            else showSettings();
+        });
+        destinations = new TabLayout(this);
+        destinations.setTabMode(TabLayout.MODE_FIXED);
+        destinations.setTabIndicatorFullWidth(false);
+        destinations.setSelectedTabIndicatorColor(Ui.color(this, androidx.appcompat.R.attr.colorPrimary));
+        destinations.setTabTextColors(Ui.color(this, com.google.android.material.R.attr.colorOnSurfaceVariant),
+            Ui.color(this, androidx.appcompat.R.attr.colorPrimary));
+        destinations.addTab(destinations.newTab().setText("Button"));
+        destinations.addTab(destinations.newTab().setText("Edge swipes"));
+        window.addView(destinations, new LinearLayout.LayoutParams(-1, dp(48)));
+        Ui.divider(this, window);
 
-        LinearLayout first = gestureRow(root);
-        addPressCard(first, KeyPress.SHORT, "Short press", null, "●");
-        addPressCard(first, KeyPress.DOUBLE, "Double press", "Off", "● ●");
-        Ui.equal(this, first);
-        LinearLayout second = gestureRow(root);
-        addPressCard(second, KeyPress.TRIPLE, "Triple press", "Off", "● ● ●");
-        addPressCard(second, KeyPress.LONG, "Long press", "Managed by OnePlus", "");
-        Ui.equal(this, second);
-        customRows = Ui.column(this);
-        root.addView(customRows);
-        rebuildPatterns();
-        Ui.button(this,root,"Record pattern",false,v -> recordPattern());
-        LinearLayout longPressSetup = Ui.card(this, root);
-        longPressSetupCard = (View) longPressSetup.getParent();
-        longPressSetupCard.setVisibility(View.GONE);
-        Ui.text(this, longPressSetup, "Turn off OnePlus action", 22, false);
-        Ui.text(this, longPressSetup, LONG_PRESS_SETUP_HINT, 14, true);
-        Ui.button(this, longPressSetup, "Open OnePlus settings", true, v -> onePlusSettings());
-        LinearLayout connection=Ui.card(this,root);detail=Ui.text(this,connection,"",14,true);
-        progress=new LinearProgressIndicator(this);progress.setIndeterminate(true);progress.setVisibility(View.GONE);connection.addView(progress,new LinearLayout.LayoutParams(-1,dp(6)));
-        start=Ui.button(this,connection,"Start",true,v->startHelper());
-        stop=Ui.button(this,connection,"Stop",false,v->{if(wireless.busy.get())return;try{wireless.prefs().edit().putBoolean("user_stopped",true).apply();mailbox.requestStop();setStatus("Stopping…", STATUS_AMBER);}catch(IOException error){toast("Could not stop. Try again.");}});
-        finishSetup=Ui.button(this,root,"Finish setup",true,v->setup.show());
-        attachGestureShelf(page, header, photoLayer, softPhoto, root, second);
-        FrameLayout window = new FrameLayout(this);
-        window.addView(page, new FrameLayout.LayoutParams(-1, -1));
+        pageScroll = new NestedScrollView(this);
+        pageScroll.setFillViewport(true);
+        pageHost = new FrameLayout(this);
+        pageScroll.addView(pageHost, new FrameLayout.LayoutParams(-1, -1));
+        window.addView(pageScroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        buttonPage = buildButtonPage();
+        edges = new EdgeSettings(this);
+        activeDestination = saved == null ? 0 : saved.getInt("destination", 0);
+        destinations.selectTab(destinations.getTabAt(activeDestination));
+        pageHost.addView(activeDestination == 0 ? buttonPage : edges.page);
+        destinations.addOnTabSelectedListener(new TabLayout.OnTabSelectedListener() {
+            @Override public void onTabSelected(TabLayout.Tab tab) {
+                destinationScroll[activeDestination] = pageScroll.getScrollY();
+                activeDestination = tab.getPosition();
+                if (activeDestination == 1) edges.refresh();
+                showPage(activeDestination == 0 ? buttonPage : edges.page);
+                restoreScroll(destinationScroll[activeDestination]);
+            }
+            @Override public void onTabUnselected(TabLayout.Tab tab) { }
+            @Override public void onTabReselected(TabLayout.Tab tab) { pageScroll.smoothScrollTo(0, 0); }
+        });
+        getOnBackPressedDispatcher().addCallback(this, settingsBack);
+        updateNavigation(false);
         window.setOnApplyWindowInsetsListener((view, insets) -> {
             android.graphics.Insets bars = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
@@ -190,140 +172,58 @@ public final class MainActivity extends AppCompatActivity {
         showSelections();
     }
 
-    private void attachGestureShelf(CoordinatorLayout page, View header, View photoLayer, ImageView softPhoto, LinearLayout content, View lastRow) {
-        LinearLayout shelf = Ui.column(this);
-        GradientDrawable surface = new GradientDrawable();
-        float radius = dp(30);
-        surface.setCornerRadii(new float[] {radius, radius, radius, radius, 0, 0, 0, 0});
-        surface.setColor(Ui.color(this, com.google.android.material.R.attr.colorSurface));
-        shelf.setBackground(surface);
-        shelf.setOutlineProvider(new ViewOutlineProvider() {
-            @Override public void getOutline(View view, android.graphics.Outline outline) {
-                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight() + (int) radius, radius);
-            }
-        });
-        shelf.setElevation(dp(3));
-        BottomSheetDragHandleView handle = new BottomSheetDragHandleView(this);
-        FrameLayout toolbar = new FrameLayout(this);
-        toolbar.addView(handle, new FrameLayout.LayoutParams(dp(64), -1, Gravity.CENTER));
-        shelfNav = Ui.navigationButton(this);
-        updateShelfNavigation(false);
-        shelfNav.setOnClickListener(v -> {
-            if (settingsBack.isEnabled()) returnToGestures();
-            else showSettings();
-        });
-        FrameLayout.LayoutParams nav = new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.END);
-        nav.setMarginEnd(dp(12));
-        toolbar.addView(shelfNav, nav);
-        shelf.addView(toolbar, new LinearLayout.LayoutParams(-1, dp(48)));
-        shelfScroll = new NestedScrollView(this);
-        shelfPages = new FrameLayout(this);
-        gesturesPage = content;
-        shelfPages.addView(content);
-        shelfScroll.addView(shelfPages);
-        shelf.addView(shelfScroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        getOnBackPressedDispatcher().addCallback(this, settingsBack);
-        BottomSheetBehavior<LinearLayout> behavior = new BottomSheetBehavior<>();
-        addShelfMotion(shelf, behavior);
-        behavior.setHideable(false);
-        CoordinatorLayout.LayoutParams layout = new CoordinatorLayout.LayoutParams(-1, -1);
-        layout.setBehavior(behavior);
-        page.addView(shelf, layout);
-        // Draw into the transparent margin so the shadow follows the rounded edge
-        // during both a drag and its spring release.
-        android.graphics.Paint shadow = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
-        shadow.setColor(Ui.color(this, com.google.android.material.R.attr.colorSurface));
-        int shadowMargin = dp(84);
-        shadow.setShadowLayer(dp(36), 0, -dp(8), 0x87000000);
-        View castShadow = new View(this) {
-            @Override protected void onDraw(android.graphics.Canvas canvas) {
-                float top = shadowMargin;
-                canvas.drawRoundRect(dp(1), top, getWidth() - dp(1), getHeight() + radius,
-                    radius, radius, shadow);
-            }
-        };
-        castShadow.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        castShadow.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
-        page.addView(castShadow, 1, new CoordinatorLayout.LayoutParams(-1, shadowMargin + dp(32)));
-        shelf.getViewTreeObserver().addOnPreDrawListener(() -> {
-            castShadow.setTranslationY(shelf.getY() - shadowMargin);
-            int travel = shelf.getHeight() - behavior.getPeekHeight();
-            if (travel > 0) {
-                float distance = page.getHeight() - behavior.getPeekHeight() - shelf.getY();
-                float fraction = Math.max(0f, Math.min(1f, distance / travel));
-                float progress = fraction * fraction * (3f - 2f * fraction);
-                softPhoto.setAlpha(progress);
-                float scale = 1f + .06f * (1f - progress);
-                photoLayer.setScaleX(scale);
-                photoLayer.setScaleY(scale);
-            }
-            return true;
-        });
-        Runnable sizeShelf = () -> {
-            int height = page.getHeight();
-            if (height == 0 || lastRow.getHeight() == 0) return;
-            int expandedHeight = height - Math.min(dp(114), height / 6);
-            int restingHeight = Math.min(expandedHeight, toolbar.getHeight() + lastRow.getBottom() + dp(8));
-            int photoHeight = height - restingHeight + dp(30);
-            ViewGroup.LayoutParams photo = header.getLayoutParams();
-            if (photo.height != photoHeight) {
-                photo.height = photoHeight;
-                header.setLayoutParams(photo);
-            }
-            if (layout.height != expandedHeight) {
-                layout.height = expandedHeight;
-                shelf.setLayoutParams(layout);
-            }
-            if (behavior.getPeekHeight() != restingHeight) behavior.setPeekHeight(restingHeight);
-        };
-        View.OnLayoutChangeListener resize = (v, l, t, r, b, oldL, oldT, oldR, oldB) -> {
-            page.removeCallbacks(sizeShelf);
-            page.post(sizeShelf);
-        };
-        page.addOnLayoutChangeListener(resize);
-        lastRow.addOnLayoutChangeListener(resize);
-    }
+    private LinearLayout buildButtonPage() {
+        LinearLayout content = Ui.column(this);
+        content.setPadding(dp(20), dp(20), dp(20), dp(24));
+        Ui.heading(this, content, "Button mappings");
+        Ui.text(this, content, "Tap a press to assign one or more actions.", 14, true);
+        LinearLayout mappings = Ui.card(this, content);
+        mappings.setPadding(dp(12), dp(4), dp(12), dp(4));
+        addPressRow(mappings, KeyPress.SHORT, "Short press", null);
+        Ui.divider(this, mappings);
+        addPressRow(mappings, KeyPress.DOUBLE, "Double press", "Off");
+        Ui.divider(this, mappings);
+        addPressRow(mappings, KeyPress.TRIPLE, "Triple press", "Off");
+        Ui.divider(this, mappings);
+        addPressRow(mappings, KeyPress.LONG, "Long press", "Managed by OnePlus");
+        customRows = Ui.column(this);
+        mappings.addView(customRows);
+        rebuildPatterns();
+        Ui.button(this, content, "Record press pattern", false, v -> recordPattern());
 
-    private void addShelfMotion(View shelf, BottomSheetBehavior<LinearLayout> behavior) {
-        SpringForce force = new SpringForce(0f)
-            .setStiffness(getResources().getFloat(com.google.android.material.R.dimen.m3_sys_motion_expressive_spring_default_spatial_stiffness))
-            .setDampingRatio(getResources().getFloat(com.google.android.material.R.dimen.m3_sys_motion_expressive_spring_default_spatial_damping));
-        SpringAnimation recoil = new SpringAnimation(shelf, SpringAnimation.TRANSLATION_Y).setSpring(force);
-        behavior.addBottomSheetCallback(new BottomSheetBehavior.BottomSheetCallback() {
-            private long lastMove;
-            private int lastTop;
-            private float velocity;
+        LinearLayout longPressSetup = Ui.card(this, content);
+        longPressSetupCard = (View) longPressSetup.getParent();
+        longPressSetupCard.setVisibility(View.GONE);
+        Ui.text(this, longPressSetup, "OnePlus long press", 18, false);
+        Ui.text(this, longPressSetup, LONG_PRESS_SETUP_HINT, 14, true);
+        Ui.button(this, longPressSetup, "Open OnePlus settings", false, v -> onePlusSettings());
 
-            @Override public void onSlide(View view, float offset) {
-                if (behavior.getState() != BottomSheetBehavior.STATE_DRAGGING) return;
-                long now = SystemClock.uptimeMillis();
-                long elapsed = now - lastMove;
-                if (elapsed > 0) {
-                    velocity = (view.getTop() - lastTop) * 1000f / elapsed;
-                    lastTop = view.getTop();
-                    lastMove = now;
-                }
-            }
-
-            @Override public void onStateChanged(View view, int state) {
-                if (state == BottomSheetBehavior.STATE_DRAGGING) {
-                    recoil.cancel();
-                    view.setTranslationY(0f);
-                    lastTop = view.getTop();
-                    lastMove = SystemClock.uptimeMillis();
-                    velocity = 0f;
-                } else if (state == BottomSheetBehavior.STATE_SETTLING && lastMove != 0) {
-                    if (android.animation.ValueAnimator.areAnimatorsEnabled() && SystemClock.uptimeMillis() - lastMove < 100) {
-                        float limit = dp(480);
-                        recoil.setStartVelocity(Math.max(-limit, Math.min(limit, velocity * .45f)));
-                        recoil.start();
-                    }
-                    lastMove = 0;
-                } else if (state != BottomSheetBehavior.STATE_SETTLING) {
-                    lastMove = 0;
-                }
-            }
+        LinearLayout connection = Ui.card(this, content);
+        status = Ui.text(this, connection, "Checking button connection…", 16, false);
+        statusDot.setShape(GradientDrawable.OVAL);
+        statusDot.setSize(dp(8), dp(8));
+        statusDot.setColor(STATUS_AMBER);
+        status.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+        status.setCompoundDrawablePadding(dp(8));
+        status.setCompoundDrawablesRelativeWithIntrinsicBounds(statusDot, null, null, null);
+        detail = Ui.text(this, connection, "", 14, true);
+        progress = new LinearProgressIndicator(this);
+        progress.setIndeterminate(true);
+        progress.setVisibility(View.GONE);
+        connection.addView(progress, new LinearLayout.LayoutParams(-1, dp(4)));
+        LinearLayout controls = Ui.actions(this, connection);
+        start = Ui.button(this, controls, "Start", true, v -> startHelper());
+        stop = Ui.button(this, controls, "Stop", false, v -> {
+            if (wireless.busy.get()) return;
+            try {
+                wireless.prefs().edit().putBoolean("user_stopped", true).apply();
+                mailbox.requestStop();
+                setStatus("Stopping…", STATUS_AMBER);
+            } catch (IOException error) { toast("Could not stop. Try again."); }
         });
+        finishSetup = Ui.button(this, controls, "Set up button", true, v -> setup.show());
+        Ui.equal(this, controls);
+        return content;
     }
 
     private void initializeLongPressDefault() {
@@ -353,7 +253,7 @@ public final class MainActivity extends AppCompatActivity {
 
     private void showSettingsSheet(boolean includeConnection) {
         if (settingsBack.isEnabled()) return;
-        previousScroll = shelfScroll.getScrollY();
+        previousScroll = pageScroll.getScrollY();
         LinearLayout body = Ui.column(this);
         body.setPadding(dp(20), dp(20), dp(20), dp(24));
         TextView title = Ui.text(this, body, includeConnection ? "Settings" : "Press timing", 30, false);
@@ -412,10 +312,6 @@ public final class MainActivity extends AppCompatActivity {
             settingsRow(connection, "Set up button", android.R.drawable.ic_menu_manage, setup::show);
             settingsRow(connection, "Connection settings", android.R.drawable.ic_menu_preferences, setup::advanced);
 
-            LinearLayout swipeCard = Ui.card(this, body);
-            Ui.text(this, swipeCard, "Edge swipes", 19, false);
-            settingsRow(swipeCard, "Set up edge swipes", R.drawable.ic_back, () -> EdgeSettings.show(this));
-
             LinearLayout updatesCard = Ui.card(this, body);
             Ui.text(this, updatesCard, "App updates", 19, false);
             settingsRow(updatesCard, "Check for updates", android.R.drawable.ic_popup_sync, this::checkUpdates);
@@ -428,39 +324,34 @@ public final class MainActivity extends AppCompatActivity {
             updatesCard.addView(automatic);
         }
         settingsBack.setEnabled(true);
-        updateShelfNavigation(true);
-        switchShelfPage(body, true);
-        shelfScroll.scrollTo(0, 0);
+        updateNavigation(true);
+        showPage(body);
+        pageScroll.scrollTo(0, 0);
         androidx.core.view.ViewCompat.setAccessibilityPaneTitle(body, title.getText());
     }
 
-    private void updateShelfNavigation(boolean settingsOpen) {
-        int inset = dp(settingsOpen ? 12 : 8);
-        shelfNav.setPadding(inset, inset, inset, inset);
-        shelfNav.setImageResource(settingsOpen ? R.drawable.ic_back : R.drawable.ic_settings);
-        shelfNav.setContentDescription(settingsOpen ? "Back to gestures" : "Settings");
+    private void updateNavigation(boolean settingsOpen) {
+        settingsButton.setPadding(dp(11), dp(11), dp(11), dp(11));
+        settingsButton.setImageResource(settingsOpen ? R.drawable.ic_back : R.drawable.ic_settings);
+        settingsButton.setContentDescription(settingsOpen ? "Back" : "Settings");
+        destinations.setVisibility(settingsOpen ? View.GONE : View.VISIBLE);
     }
 
-    private void returnToGestures() {
+    private void returnToMain() {
         settingsBack.setEnabled(false);
-        updateShelfNavigation(false);
-        switchShelfPage(gesturesPage, false);
-        shelfScroll.post(() -> shelfScroll.scrollTo(0, previousScroll));
+        updateNavigation(false);
+        showPage(activeDestination == 0 ? buttonPage : edges.page);
+        restoreScroll(previousScroll);
     }
 
-    private void switchShelfPage(View next, boolean forward) {
-        View previous = shelfPages.getChildAt(0);
-        if (android.animation.ValueAnimator.areAnimatorsEnabled()) {
-            android.transition.TransitionManager.endTransitions(shelfPages);
-            com.google.android.material.transition.platform.MaterialSharedAxis motion =
-                new com.google.android.material.transition.platform.MaterialSharedAxis(
-                    com.google.android.material.transition.platform.MaterialSharedAxis.X, forward);
-            motion.addTarget(previous);
-            motion.addTarget(next);
-            android.transition.TransitionManager.beginDelayedTransition(shelfPages, motion);
-        }
-        shelfPages.removeView(previous);
-        shelfPages.addView(next);
+    private void restoreScroll(int y) {
+        pageScroll.post(() -> pageScroll.scrollTo(0, y));
+    }
+
+    private void showPage(View next) {
+        if (pageHost.getChildAt(0) == next) return;
+        pageHost.removeAllViews();
+        pageHost.addView(next);
     }
 
     private void settingsRow(LinearLayout group, String label, int icon, Runnable open) {
@@ -476,75 +367,37 @@ public final class MainActivity extends AppCompatActivity {
         group.addView(row, new LinearLayout.LayoutParams(-1, -2));
     }
 
-    private LinearLayout gestureRow(LinearLayout parent) {
-        LinearLayout row = new LinearLayout(this);
-        row.setGravity(Gravity.TOP);
-        row.setBaselineAligned(false);
-        row.setClipChildren(false);
-        LinearLayout.LayoutParams size = new LinearLayout.LayoutParams(-1, -2);
-        size.topMargin = dp(14);
-        parent.addView(row, size);
-        return row;
-    }
-
-    private CharSequence rhythmMarks(int gesture, int color) {
-        android.text.SpannableString marks = new android.text.SpannableString(GesturePatterns.label(gesture));
-        for (int index = 0; index < marks.length(); index++) {
-            android.graphics.drawable.Drawable symbol;
-            if (marks.charAt(index) == '—') {
-                symbol = getDrawable(R.drawable.ic_hold).mutate();
-                symbol.setBounds(0, 0, symbol.getIntrinsicWidth(), symbol.getIntrinsicHeight());
-            } else if (marks.charAt(index) == '●') {
-                android.graphics.drawable.GradientDrawable dot = new android.graphics.drawable.GradientDrawable();
-                dot.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-                dot.setColor(android.graphics.Color.WHITE);
-                dot.setBounds(0, 0, dp(10), dp(10));
-                symbol = dot;
-            } else {
-                continue;
-            }
-            symbol.setTint(color);
-            marks.setSpan(new android.text.style.ImageSpan(symbol, android.text.style.DynamicDrawableSpan.ALIGN_CENTER),
-                index, index + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        }
-        return marks;
-    }
-
-    private void addPressCard(LinearLayout row, int gesture, String title, String unsetLabel, String rhythm) {
-        LinearLayout card = Ui.card(this, row);
-        card.setPadding(dp(12), dp(14), dp(12), dp(10));
-        MaterialCardView tile = (MaterialCardView) card.getParent();
-        LinearLayout.LayoutParams tileSize = (LinearLayout.LayoutParams) tile.getLayoutParams();
-        tileSize.topMargin = 0;
-        tileSize.height = LinearLayout.LayoutParams.MATCH_PARENT;
-        tile.setLayoutParams(tileSize);
-        tile.setRadius(dp(18));
-        tile.setCardElevation(dp(4));
-        tile.setOutlineAmbientShadowColor(android.graphics.Color.BLACK);
-        tile.setOutlineSpotShadowColor(android.graphics.Color.BLACK);
-        tile.setStrokeColor(0x16FFFFFF);
-        tile.setStrokeWidth(dp(1));
-        tile.setFocusable(true);
-        tile.setOnClickListener(v -> choose(gesture, gesture > KeyPress.TRIPLE ? rhythm : title, unsetLabel));
-        LinearLayout symbols = Ui.actions(this, card);
-        TextView pattern = new TextView(this);
-        pattern.setTextColor(Ui.color(this, androidx.appcompat.R.attr.colorPrimary));
-        pattern.setText(rhythmMarks(gesture, pattern.getCurrentTextColor()));
-        pattern.setContentDescription(gesture <= KeyPress.TRIPLE ? title :
-                GesturePatterns.text(gesture).replace(".", "short ").replace("-", "long ").trim());
-        symbols.addView(pattern, new LinearLayout.LayoutParams(0, -2, 1));
+    private void addPressRow(LinearLayout group, int gesture, String title, String unsetLabel) {
+        LinearLayout row = Ui.actions(this, group);
         ImageView icon = new ImageView(this);
-        symbols.addView(icon, new LinearLayout.LayoutParams(dp(36), dp(36)));
+        icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         pressIcons.put(gesture, icon);
-        TextView actionName = Ui.text(this, card, "", 21, false);
-        actionName.setTypeface(null, Typeface.BOLD);
-        actionName.setPadding(0, dp(12), 0, 0);
-        actionName.setMinLines(2);
-        pressNames.put(gesture, actionName);
-        pressPreviews.put(gesture, Ui.button(this, card, "Preview", false, v -> preview(gesture)));
+        LinearLayout labels = Ui.mapping(this, row, icon, title,
+            () -> choose(gesture, title, unsetLabel));
+        TextView assignment = Ui.text(this, labels, "", 14, true);
+        assignment.setPadding(0, 0, 0, 0);
+        assignment.setMaxLines(2);
+        assignment.setEllipsize(TextUtils.TruncateAt.END);
+        pressNames.put(gesture, assignment);
+        MaterialButton preview = new MaterialButton(this, null, androidx.appcompat.R.attr.borderlessButtonStyle);
+        preview.setText("Preview");
+        preview.setAllCaps(false);
+        preview.setTextSize(13);
+        preview.setMinHeight(dp(48));
+        preview.setContentDescription("Preview " + title);
+        preview.setOnClickListener(v -> preview(gesture));
+        row.addView(preview, new LinearLayout.LayoutParams(-2, -2));
+        pressPreviews.put(gesture, preview);
     }
+
+    private static String patternName(int gesture) {
+        StringJoiner presses = new StringJoiner(" · ");
+        for (char press : GesturePatterns.text(gesture).toCharArray()) presses.add(press == '-' ? "Hold" : "Tap");
+        return presses.toString();
+    }
+
     private void confirmRemove(int gesture) {
-            new MaterialAlertDialogBuilder(this).setTitle("Remove " + GesturePatterns.label(gesture) + "?").setNegativeButton("Cancel", null)
+            new MaterialAlertDialogBuilder(this).setTitle("Remove " + patternName(gesture) + "?").setNegativeButton("Cancel", null)
                 .setPositiveButton("Remove", (dialog, which) -> {
                     try { mailbox.removePattern(gesture); rebuildPatterns(); showSelections(); }
                     catch (IOException error) { toast(error.getMessage()); }
@@ -556,19 +409,9 @@ public final class MainActivity extends AppCompatActivity {
         pressNames.keySet().removeIf(id -> id > KeyPress.TRIPLE);
         pressIcons.keySet().removeIf(id -> id > KeyPress.TRIPLE);
         pressPreviews.keySet().removeIf(id -> id > KeyPress.TRIPLE);
-        LinearLayout row = null;
         for (int id : mailbox.patterns()) {
-            if (row == null || row.getChildCount() == 2) row = gestureRow(customRows);
-            addPressCard(row, id, GesturePatterns.label(id), "Off", GesturePatterns.label(id));
-            Ui.equal(this, row);
-        }
-        if (row != null && row.getChildCount() == 1) {
-            View tile = row.getChildAt(0);
-            LinearLayout.LayoutParams tileSize = (LinearLayout.LayoutParams) tile.getLayoutParams();
-            tileSize.height = LinearLayout.LayoutParams.WRAP_CONTENT;
-            tile.setLayoutParams(tileSize);
-            row.addView(new Space(this), new LinearLayout.LayoutParams(0, 1));
-            Ui.equal(this, row);
+            Ui.divider(this, customRows);
+            addPressRow(customRows, id, patternName(id), "Off");
         }
     }
 
@@ -592,7 +435,7 @@ public final class MainActivity extends AppCompatActivity {
             try {
                 String value = capture.read(token);
                 boolean valid = value.matches("[.-]{1,8}");
-                sequence.setText(valid ? rhythmMarks(GesturePatterns.id(value), sequence.getCurrentTextColor()) : value.isEmpty() ? "Waiting for Plus Key…" : "Too many presses. Cancel and try again.");
+                sequence.setText(valid ? patternName(GesturePatterns.id(value)) : value.isEmpty() ? "Waiting for Plus Key…" : "Too many presses. Cancel and try again.");
                 dialog.getButton(-1).setEnabled(valid);
             } catch (IOException error) { dialog.getButton(-1).setEnabled(false); }
         };
@@ -607,7 +450,7 @@ public final class MainActivity extends AppCompatActivity {
                 String value = capture.read(token);
                 if (!value.matches("[.-]{1,8}")) return;
                 int id = GesturePatterns.id(value);
-                mailbox.addPattern(id); dialog.dismiss(); rebuildPatterns(); showSelections(); choose(id,GesturePatterns.label(id),"Off");
+                mailbox.addPattern(id); dialog.dismiss(); rebuildPatterns(); showSelections(); choose(id,patternName(id),"Off");
             } catch (IOException | IllegalArgumentException error) { toast(error.getMessage()); }
         });
     }
@@ -615,31 +458,47 @@ public final class MainActivity extends AppCompatActivity {
     private void choose(int gesture, String title, String unsetLabel) {
         try {
             String current = mailbox.selected(gesture);
-            Runnable timing = GesturePatterns.text(gesture).length() > 1 ? this::showClickInterval : null;
-            new ChoicePicker(this, choice -> {
-                if ("chain:".equals(choice.target)) {
-                    ChainEditor.show(this, current, target -> saveChoice(gesture,
-                        new Targets.Choice(Targets.label(this, target), target)));
-                } else if (choice.target != null && choice.target.startsWith("configure:")) {
-                    ComponentName component = ComponentName.unflattenFromString(choice.target.substring("configure:".length()));
-                    configuringGesture = gesture;
-                    configuringPackage = component.getPackageName();
-                    try {
-                        shortcutSetup.launch(new Intent(Intent.ACTION_CREATE_SHORTCUT).setComponent(component));
-                    } catch (ActivityNotFoundException | SecurityException error) {
-                        configuringPackage = null;
-                        toast("Shortcut setup unavailable");
-                    }
-                } else if (GesturePatterns.text(gesture).endsWith("-") && choice.target != null && ChoicePicker.canHold(this, choice.target)) {
-                    String normal = choice.target.startsWith("tile:") ? "Click once" : "Toggle";
-                    new MaterialAlertDialogBuilder(this).setTitle(choice.label)
-                        .setMessage("While held is available for patterns ending in a long press. Starts when the final hold is recognized and stops when you release Plus Key.")
-                        .setNegativeButton(normal,(dialog,which) -> saveChoice(gesture,choice))
-                        .setPositiveButton("While held",(dialog,which) -> saveChoice(gesture,new Targets.Choice(choice.label + " · While held","hold:" + choice.target))).show();
-                } else saveChoice(gesture, choice);
-            }).show(title, unsetLabel, current != null && current.startsWith("hold:") ? current.substring(5) : current, timing,
-                    gesture > KeyPress.TRIPLE ? () -> confirmRemove(gesture) : null);
+            Map<String, Runnable> options = new LinkedHashMap<>();
+            if (GesturePatterns.text(gesture).length() > 1) options.put("Press timing", this::showClickInterval);
+            if (gesture > KeyPress.TRIPLE) options.put("Remove pattern", () -> confirmRemove(gesture));
+            ChainEditor.show(this, title, current, unsetLabel,
+                target -> saveChoice(gesture, new Targets.Choice(Targets.label(this, target), target)),
+                "Apps & special actions", close -> chooseAlternative(gesture, title, current, close), options);
         } catch (IOException error) { toast("Could not read selection"); }
+    }
+
+    private void chooseAlternative(int gesture, String title, String current, Runnable closeEditor) {
+        boolean canHold = GesturePatterns.text(gesture).endsWith("-");
+        new ChoicePicker(this, choice -> {
+            if (choice.target.startsWith("configure:")) {
+                ComponentName component = ComponentName.unflattenFromString(choice.target.substring("configure:".length()));
+                configuringGesture = gesture;
+                configuringPackage = component.getPackageName();
+                try {
+                    shortcutSetup.launch(new Intent(Intent.ACTION_CREATE_SHORTCUT).setComponent(component));
+                    closeEditor.run();
+                } catch (ActivityNotFoundException | SecurityException error) {
+                    configuringPackage = null;
+                    toast("Shortcut setup unavailable");
+                }
+            } else if (canHold && ChoicePicker.canHold(this, choice.target)) {
+                String normal = choice.target.startsWith("tile:") ? "Click once" : "Toggle";
+                new MaterialAlertDialogBuilder(this).setTitle(choice.label)
+                    .setMessage("While held starts when the final hold is recognized and stops when you release Plus Key.")
+                    .setNeutralButton("Cancel", null)
+                    .setNegativeButton(normal, (dialog, which) -> {
+                        closeEditor.run();
+                        saveChoice(gesture, choice);
+                    })
+                    .setPositiveButton("While held", (dialog, which) -> {
+                        closeEditor.run();
+                        saveChoice(gesture, new Targets.Choice(choice.label + " · While held", "hold:" + choice.target));
+                    }).show();
+            } else {
+                closeEditor.run();
+                saveChoice(gesture, choice);
+            }
+        }, ChoicePicker.Mode.BUTTON, canHold).show(title, current != null && current.startsWith("hold:") ? current.substring(5) : current);
     }
     private void saveChoice(int gesture, Targets.Choice choice) {
         try {
@@ -673,7 +532,8 @@ public final class MainActivity extends AppCompatActivity {
                     boolean blocked = target != null && !"nothing".equals(nativeAction);
                     boolean showSetup = blocked && nativeAction != null && !nativeAction.isEmpty();
                     boolean openSettings = target == null || (blocked && !showSetup);
-                    preview.setText(openSettings ? "Plus Key settings" : "Preview");
+                    preview.setText(openSettings ? "OnePlus settings" : "Preview");
+                    preview.setContentDescription(openSettings ? "Open OnePlus settings" : "Preview Long press");
                     preview.setEnabled(!showSetup);
                     preview.setOnClickListener(v -> {if (openSettings) onePlusSettings(); else preview(KeyPress.LONG);});
                     longPressSetupCard.setVisibility(showSetup ? View.VISIBLE : View.GONE);
@@ -686,7 +546,7 @@ public final class MainActivity extends AppCompatActivity {
     private void showSelection(int gesture, String target){
         TextView name = pressNames.get(gesture);
         ImageView icon = pressIcons.get(gesture);
-        name.setText(target == null && gesture != KeyPress.LONG ? "Off" : Targets.label(this, target));
+        name.setText(Targets.summary(this, target, gesture == KeyPress.LONG ? "Managed by OnePlus" : "Off"));
         icon.setImageTintList(null);
         String action = target != null && target.startsWith("hold:") ? target.substring(5) : target;
         if (Options.fanApps(action) != null) {
@@ -791,7 +651,7 @@ public final class MainActivity extends AppCompatActivity {
         start.setVisibility(!ready && !busy && configured ? View.VISIBLE : View.GONE);
         stop.setVisibility(ready && !busy ? View.VISIBLE : View.GONE);
         finishSetup.setVisibility(!ready && !busy ? View.VISIBLE : View.GONE);
-        setTextIfChanged(finishSetup, configured ? "Fix setup" : "Finish setup");
+        setTextIfChanged(finishSetup, configured ? "Fix setup" : "Set up button");
         if (busy) {
             setStatus("Starting…", STATUS_AMBER);
             setTextIfChanged(detail, wireless.message);
@@ -810,7 +670,7 @@ public final class MainActivity extends AppCompatActivity {
             setStatus(configured ? "Not running" : "Setup needed", configured ? STATUS_GRAY : STATUS_AMBER);
             String message = wireless.message;
             if (!message.startsWith("Setup needed:")) {
-                message = configured ? "Tap Start to reconnect your button." : "Finish setup to use your button.";
+                message = configured ? "Tap Start to reconnect your button." : "Connect the button to run these mappings.";
             }
             setTextIfChanged(detail, message);
         }
@@ -835,7 +695,7 @@ public final class MainActivity extends AppCompatActivity {
     }}
     private void toast(String message){Toast.makeText(this,message,Toast.LENGTH_LONG).show();}
     private int dp(int value){return Ui.dp(this,value);}
-    protected void onResume(){super.onResume();resumed=true;resumeGeneration++;watchStatus();handler.post(poll);if(updates!=null){updates.resumed();updates.check(false);}rebuildPatterns();showSelections();
+    protected void onResume(){super.onResume();resumed=true;resumeGeneration++;watchStatus();handler.post(poll);if(updates!=null){updates.resumed();updates.check(false);}rebuildPatterns();showSelections();edges.refresh();
         boolean pendingAutomatic=wireless.prefs().getBoolean("automatic_requested",false)&&setup.wifiDebugging();
         if(!ShizukuConnection.authorized()&&(!autoAttempt||pendingAutomatic)&&wireless.canUseWireless()&&!wireless.prefs().getBoolean("user_stopped",false)){
             autoAttempt=true;try{String current=mailbox.readStatus(System.currentTimeMillis());if(current==null||!current.startsWith("Listening|")||!Helper.VERSION.equals(mailbox.runningVersion())||wireless.prefs().getBoolean("automatic_requested",false)||wireless.automatic())wireless.start();}catch(IOException ignored){}

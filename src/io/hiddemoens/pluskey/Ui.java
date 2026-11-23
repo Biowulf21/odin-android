@@ -35,6 +35,41 @@ final class Ui {
         LinearLayout content=column(c);content.setPadding(dp(c,20),dp(c,16),dp(c,20),dp(c,16));card.addView(content);
         LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);params.topMargin=dp(c,14);root.addView(card,params);return content;
     }
+    static void heading(Context context, LinearLayout root, String title) {
+        TextView label = text(context, root, title, 24, false);
+        label.setTypeface(null, android.graphics.Typeface.BOLD);
+        label.setAccessibilityHeading(true);
+    }
+
+    static void divider(Context context, LinearLayout root) {
+        View line = new View(context);
+        line.setBackgroundColor(color(context, com.google.android.material.R.attr.colorOutlineVariant));
+        root.addView(line, new LinearLayout.LayoutParams(-1, dp(context, 1)));
+    }
+
+    static LinearLayout mapping(Context context, LinearLayout row, ImageView icon, String title, Runnable edit) {
+        LinearLayout hit = new LinearLayout(context);
+        hit.setGravity(Gravity.CENTER_VERTICAL);
+        hit.setMinimumHeight(dp(context, 64));
+        hit.setPadding(dp(context, 4), dp(context, 10), dp(context, 8), dp(context, 10));
+        hit.setFocusable(true);
+        hit.setScreenReaderFocusable(true);
+        android.util.TypedValue ripple = new android.util.TypedValue();
+        context.getTheme().resolveAttribute(android.R.attr.selectableItemBackground, ripple, true);
+        hit.setBackgroundResource(ripple.resourceId);
+        hit.setOnClickListener(v -> edit.run());
+        row.addView(hit, new LinearLayout.LayoutParams(0, -2, 1));
+        LinearLayout.LayoutParams iconSize = new LinearLayout.LayoutParams(dp(context, 24), dp(context, 24));
+        iconSize.setMarginEnd(dp(context, 12));
+        hit.addView(icon, iconSize);
+        LinearLayout labels = column(context);
+        hit.addView(labels, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView name = text(context, labels, title, 16, false);
+        name.setPadding(0, 0, 0, dp(context, 3));
+        name.setTypeface(null, android.graphics.Typeface.BOLD);
+        return labels;
+    }
+
     static MaterialButton button(Context c,LinearLayout root,String label,boolean primary,View.OnClickListener action){
         MaterialButton button=new MaterialButton(c,null,primary?com.google.android.material.R.attr.materialButtonStyle:com.google.android.material.R.attr.materialButtonTonalStyle);
         button.setText(label);button.setAllCaps(false);button.setTextSize(15);button.setMinHeight(dp(c,48));button.setOnClickListener(action);

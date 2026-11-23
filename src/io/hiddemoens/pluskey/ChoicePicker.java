@@ -72,6 +72,7 @@ final class ChoicePicker {
     private final Selected selected;
     enum Mode { BUTTON, STEP, EDGE }
     private final Mode mode;
+    private final boolean allowHold;
     private final List<Entry> visible = new ArrayList<>();
     private final List<Entry> actions = new ArrayList<>();
     private final LruCache<String, Drawable> icons = new LruCache<>(32);
@@ -91,31 +92,22 @@ final class ChoicePicker {
     private TextView gesture;
     private TabLayout tabs;
     private ImageButton back;
-    private View timingButton, removeButton;
     private boolean browsingApps, loading;
     private final Rows rows = new Rows();
 
-    ChoicePicker(Context context, Selected selected) {
-        this(context, selected, Mode.BUTTON);
-    }
-
-    ChoicePicker(Context context, Selected selected, Mode mode) {
+    ChoicePicker(Context context, Selected selected, Mode mode, boolean allowHold) {
         this.context = context;
         this.selected = selected;
         this.mode = mode;
+        this.allowHold = allowHold;
     }
 
-    void show(String title, String unsetLabel, String current, Runnable timing, Runnable remove) {
+    void show(String title, String current) {
         this.current = current;
         gestureTitle = title;
-        if (unsetLabel != null) actions.add(new Entry(new Targets.Choice(unsetLabel, null), null));
         for (int i = 0; i < Targets.ACTIONS.length; i++) {
-            if (Targets.ACTIONS[i].equals("action:pause_torch")) continue;
             if (Targets.ACTIONS[i].equals("action:torch") && !context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH)) continue;
             actions.add(new Entry(new Targets.Choice(Targets.LABELS[i], Targets.ACTIONS[i]), null));
-        }
-        if (mode != Mode.STEP) {
-            actions.add(new Entry(new Targets.Choice("Action chain", "chain:"), null));
         }
         if (mode == Mode.BUTTON) {
             actions.add(new Entry(new Targets.Choice("If media is playing…", "media:"), null));
@@ -139,7 +131,7 @@ final class ChoicePicker {
         gesture.setTypeface(null, Typeface.BOLD);
         heading.addView(gesture, new LinearLayout.LayoutParams(0, -2, 1));
         back = Ui.navigationButton(context);
-        back.setContentDescription("Back to gestures");
+        back.setContentDescription("Back to mapping");
         back.setPadding(dp(12), dp(12), dp(12), dp(12));
         back.setImageResource(R.drawable.ic_back);
         back.setOnClickListener(v -> goBack());
@@ -162,13 +154,13 @@ final class ChoicePicker {
         tabs.setSelectedTabIndicatorGravity(TabLayout.INDICATOR_GRAVITY_STRETCH);
         tabs.setTabTextColors(Ui.color(context, com.google.android.material.R.attr.colorOnSurfaceVariant),
             Ui.color(context, com.google.android.material.R.attr.colorOnPrimary));
-        tabs.addTab(tabs.newTab().setText("Actions"));
+        tabs.addTab(tabs.newTab().setText("Special actions"));
         tabs.addTab(tabs.newTab().setText("Apps"));
         LinearLayout.LayoutParams segment = new LinearLayout.LayoutParams(-1, dp(48));
         segment.topMargin = dp(6);
         segment.bottomMargin = dp(12);
         body.addView(tabs, segment);
-        if (mode == Mode.STEP) tabs.setVisibility(View.GONE);
+        if (mode != Mode.BUTTON) tabs.setVisibility(View.GONE);
         legend = Ui.text(context, body, "Offers an action you can use while locked", 14, false);
         Drawable lock = context.getDrawable(R.drawable.ic_locked_action).mutate();
         lock.setTint(accent);
@@ -177,7 +169,7 @@ final class ChoicePicker {
         tileNote = Ui.text(context, body, "Only tiles already in Android Quick Settings are shown.", 14, false);
         search = new EditText(context);
         search.setSingleLine();
-        search.setHint("Search apps");
+        search.setHint(mode == Mode.STEP ? "Search actions" : "Search apps");
         search.setTextSize(16);
         search.setBackground(rounded(surface, 16));
         search.setPadding(dp(16), 0, dp(16), 0);
@@ -206,8 +198,6 @@ final class ChoicePicker {
             String target = "fan:" + String.join(",", fanSelection);
             if (Options.fanApps(target) != null) finish(new Targets.Choice(Targets.label(context, target), target));
         });
-        if (timing != null) timingButton = Ui.button(context, body, "Press timing", false, v -> { sheet.dismiss(); timing.run(); });
-        if (remove != null) removeButton = Ui.button(context, body, "Remove pattern", false, v -> { sheet.dismiss(); remove.run(); });
         list.setOnItemClickListener((parent, view, position, id) -> pick(visible.get(position)));
         search.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
@@ -225,6 +215,7 @@ final class ChoicePicker {
             public void onTabReselected(TabLayout.Tab tab) {}
         });
         sheet.setContentView(body);
+        if (mode != Mode.STEP) tabs.selectTab(tabs.getTabAt(1));
         refresh();
         sheet.getBehavior().setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED);
         sheet.show();
@@ -295,7 +286,8 @@ final class ChoicePicker {
     }
 
     private void refresh() {
-        search.setVisibility((browsingApps || choosingFan) && openedApp == null ? View.VISIBLE : View.GONE);
+        search.setVisibility(mode == Mode.STEP || (browsingApps || choosingFan) && openedApp == null
+            ? View.VISIBLE : View.GONE);
         legend.setVisibility(mode == Mode.BUTTON && browsingApps && (openedApp != null ? openedApp.hasLocked : apps != null && apps.stream().anyMatch(group -> group.hasLocked)) ? View.VISIBLE : View.GONE);
         tileNote.setVisibility(mode == Mode.BUTTON && openedApp != null && openedApp.hasTiles ? View.VISIBLE : View.GONE);
         visible.clear();
@@ -306,11 +298,14 @@ final class ChoicePicker {
             saveFan.setEnabled(fanSelection.size() >= 2);
         } else if (!browsingApps) {
             Map<String, List<Entry>> categories = new LinkedHashMap<>();
+            String query = mode == Mode.STEP ? actionSearchText(search.getText().toString()) : "";
             for (Entry entry : actions) {
                 String target = entry.choice.target;
                 if (mediaStep != 0 && !Options.builtIn(target)) continue;
-                if (target == null) visible.add(entry);
-                else categories.computeIfAbsent(actionCategory(target), key -> new ArrayList<>()).add(entry);
+                if (mode == Mode.BUTTON && mediaStep == 0 && Options.builtIn(target)
+                        && (!allowHold || !Options.canHold(target))) continue;
+                if (!query.isEmpty() && !actionSearchText(entry.title).contains(query)) continue;
+                categories.computeIfAbsent(actionCategory(target), key -> new ArrayList<>()).add(entry);
             }
             for (Map.Entry<String, List<Entry>> category : categories.entrySet()) {
                 visible.add(new Heading(category.getKey()));
@@ -335,7 +330,7 @@ final class ChoicePicker {
                 if (group.matches(query)) visible.add(group);
             }
         }
-        empty.setText(loading ? "Loading apps…" : "No matching apps");
+        empty.setText(loading ? "Loading apps…" : browsingApps ? "No matching apps" : "No matching actions");
         empty.setVisibility(visible.isEmpty() ? View.VISIBLE : View.GONE);
         list.setVisibility(visible.isEmpty() ? View.GONE : View.VISIBLE);
         rows.notifyDataSetChanged();
@@ -364,6 +359,10 @@ final class ChoicePicker {
             if (!remaining.isEmpty()) visible.add(new Heading("Available apps"));
         }
         visible.addAll(remaining);
+    }
+
+    private static String actionSearchText(String text) {
+        return text.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{N}]+", "");
     }
 
     private static String actionCategory(String target) {
@@ -407,8 +406,6 @@ final class ChoicePicker {
             gesture.setText("App fan");
             search.setHint("Choose 2–6 apps");
             tabs.setVisibility(View.GONE);
-            if (timingButton != null) timingButton.setVisibility(View.GONE);
-            if (removeButton != null) removeButton.setVisibility(View.GONE);
             if (apps == null && !loading) loadApps();
             return;
         }
@@ -442,7 +439,7 @@ final class ChoicePicker {
         if (choosingFan) {
             choosingFan = false;
             search.setText("");
-            search.setHint("Search apps");
+            search.setHint(mode == Mode.STEP ? "Search actions" : "Search apps");
             showApp(null);
         } else if (openedApp != null) showApp(null);
         else if (mediaStep != 0) showStep(mediaStep - 1);
@@ -453,9 +450,7 @@ final class ChoicePicker {
         openedApp = group;
         gesture.setText(group == null ? gestureTitle : group.title);
         back.setContentDescription(group == null ? "Back to gestures" : "Back to apps");
-        tabs.setVisibility(group == null ? View.VISIBLE : View.GONE);
-        if (timingButton != null) timingButton.setVisibility(group == null ? View.VISIBLE : View.GONE);
-        if (removeButton != null) removeButton.setVisibility(group == null ? View.VISIBLE : View.GONE);
+        tabs.setVisibility(group == null && mode == Mode.BUTTON ? View.VISIBLE : View.GONE);
         refresh();
         list.setSelection(group == null ? appsPosition : 0);
         gesture.announceForAccessibility(gesture.getText());
@@ -467,8 +462,6 @@ final class ChoicePicker {
         gesture.setText(step == 0 ? gestureTitle : step == 1 ? "If media is playing" : "Otherwise");
         back.setContentDescription(step == 0 ? "Back to gestures" : step == 1 ? "Back to actions" : "Back to playback action");
         tabs.setVisibility(step == 0 ? View.VISIBLE : View.GONE);
-        if (timingButton != null) timingButton.setVisibility(step == 0 ? View.VISIBLE : View.GONE);
-        if (removeButton != null) removeButton.setVisibility(step == 0 ? View.VISIBLE : View.GONE);
         refresh();
         int position = step == 0 ? mainPosition : 0;
         String selected = selectedTarget();

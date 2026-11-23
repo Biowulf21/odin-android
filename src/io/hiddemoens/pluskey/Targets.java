@@ -36,6 +36,14 @@ final class Targets {
         try{return context.getPackageManager().getActivityInfo(ComponentName.unflattenFromString(target),0).loadLabel(context.getPackageManager()).toString();}
         catch(Exception error){return "Choose an action";}
     }
+    static String summary(Context context, String target, String unset) {
+        if (target == null || target.isEmpty()) return unset;
+        String[] steps = ActionChain.parse(target);
+        if (steps == null) return label(context, target);
+        java.util.StringJoiner summary = new java.util.StringJoiner(" → ");
+        for (String step : steps) summary.add(label(context, step));
+        return summary.toString();
+    }
     static void remember(Context context,Choice choice){context.getSharedPreferences("choices",0).edit().putString(choice.target,choice.label).apply();}
     static ArrayList<Choice> shortcuts(Context context,ResolveInfo app){
         ArrayList<Choice> found=new ArrayList<>();String owner=app.activityInfo.packageName;
