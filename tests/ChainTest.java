@@ -69,6 +69,9 @@ public final class ChainTest {
             mailbox.replyAction(token, "");
             check("".equals(mailbox.readActionReply(token)), "correlated success");
             check(mailbox.readActionReply("different") == null, "ignore stale reply");
+            mailbox.requestAction(token, 5000, "action:wifi_on");
+            mailbox.clearActionRequest();
+            check(mailbox.consumeAction() == null, "helper startup drops stale requests");
         } finally {
             try (java.nio.file.DirectoryStream<Path> files = Files.newDirectoryStream(directory)) {
                 for (Path file : files) Files.delete(file);

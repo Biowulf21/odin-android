@@ -63,6 +63,8 @@ public final class Helper {
         // Binding first ensures a second start cannot create a duplicate reader.
         helper.server = new LocalServerSocket(SOCKET);
         helper.mailbox.clearStop();
+        // A fresh helper should never replay an edge action queued for the previous process.
+        helper.mailbox.clearActionRequest();
         helper.mailbox.publishVersion(VERSION);
         helper.mailbox.publish("Starting|0|Starting input reader", System.currentTimeMillis());
         Thread events = new Thread(helper::listen, "PlusLens-input");

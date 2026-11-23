@@ -214,6 +214,10 @@ final class Mailbox {
             claimed.delete();
         }
     }
+    void clearActionRequest() {
+        new File(dir, ACTION_REQUEST).delete();
+    }
+
     void requestAction(String token, long deadline, String action) throws IOException {
         if (!Options.builtIn(action)) throw new IllegalArgumentException("Unknown built-in action");
         writeActionMessage(ACTION_REQUEST, token + "\n" + deadline + "\n" + action);
