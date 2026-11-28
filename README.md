@@ -53,10 +53,32 @@ Requires JDK 21, Android SDK 37, and Build Tools 36.0.0. Supply the keystore pas
 
 For public releases, increment Android’s `versionCode`, use a numeric tag such as `v1.5.1`, and attach one signed APK with a GitHub SHA-256 asset digest. Publish a regular GitHub release so the app can offer the update.
 
-## Support
+## Fork and attribution
 
-[Buy me a coffee](https://buymeacoffee.com/biowulf21), or open **Settings → Support** in Odin.
+Odin is a fork of [PlusKey](https://github.com/hiddemoens/PlusKey) by Hidde Moens,
+licensed Apache-2.0. Changes from upstream include action chains, edge swipes, the
+swipe indicator, the app fan and Odin's own update channel; [NOTICE](NOTICE)
+records that the files were modified. Odin keeps upstream's app ID
+(`io.hiddemoens.pluskey`) so it is for sideloading only and replaces official
+PlusKey. It is not affiliated with or endorsed by Hidde Moens or OnePlus.
+"OnePlus" and "Plus Key" are used only to describe compatible hardware.
+
+Bundled libraries keep their own licences, including LGPL-3.0 spake2 (shipped as
+replaceable native libraries with source in `deps/`). See
+[THIRD_PARTY.md](THIRD_PARTY.md) and `licenses/`.
+
+## Donations
+
+Odin is free and will stay free: no ads, no paid tier, no in-app purchases. If it
+helps you, you can [buy me a coffee](https://buymeacoffee.com/biowulf21) or open **Settings → Support** in Odin.
+Donations are optional, unlock nothing, and don't buy support or a warranty.
+
+## Documentation
+
+[PRD.md](PRD.md) · [PRODUCT.md](PRODUCT.md) · [SCHEMA.md](SCHEMA.md) ·
+[DESIGN.md](DESIGN.md) (the design language shared by all of Biowulf21's apps)
 
 ## License
 
-[Apache License 2.0](LICENSE). Bundled dependency licenses are listed in [THIRD_PARTY.md](THIRD_PARTY.md). Odin is based on [PlusKey by Hidde Moens](https://github.com/hiddemoens/PlusKey). See [NOTICE](NOTICE) for attribution. Odin is independent of OnePlus.
+[Apache License 2.0](LICENSE). Attribution is in [NOTICE](NOTICE), and
+dependency licences are listed in [THIRD_PARTY.md](THIRD_PARTY.md).

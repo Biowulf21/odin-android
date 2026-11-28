@@ -3,3 +3,11 @@ Copyright 2026 Hidde Moens
 
 Original PlusKey code is licensed under Apache License 2.0.
 Third-party components retain their respective licenses; see THIRD_PARTY.md, licenses/ and vendor/libadb/.
+
+Odin
+Modifications Copyright 2026 Biowulf21.
+
+Odin is a modified version of PlusKey. Files under src/, res/, tests/ and the
+build scripts have been changed from the original PlusKey sources (action chains,
+edge swipes, swipe indicator, app fan, update channel and rebranding). The git
+history of https://github.com/Biowulf21/odin-android records each change.
